@@ -4,6 +4,8 @@ from typing import Literal
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
+from agents.technical.graph import run_technical_watchlist_scan
+from agents.technical.schemas import TechnicalWatchlistRequest
 from sma_graph import run_sma_workflow
 from truth_graph import run_daily_truth_summary, run_truth_workflow
 from trading_graph import run_trading_workflow
@@ -73,6 +75,7 @@ async def root():
             "POST /analysis/sma",
             "POST /truth/analyze",
             "POST /truth/summary/daily",
+            "POST /analysis/technical/watchlist",
         ],
     }
 
@@ -118,3 +121,8 @@ async def truth_analysis(payload: TruthSignalRequest):
 async def truth_daily_summary(payload: DailyTruthSummaryRequest):
     records = [record.model_dump() for record in payload.records]
     return run_daily_truth_summary(records=records, summary_date=payload.date)
+
+
+@app.post("/analysis/technical/watchlist")
+async def technical_watchlist_analysis(payload: TechnicalWatchlistRequest):
+    return run_technical_watchlist_scan(symbols=payload.symbols)
