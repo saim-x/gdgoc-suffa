@@ -3,29 +3,29 @@ Adapter functions: translate domain-specific agent outputs into the
 shared AgentResult contract.
 
 WHY ADAPTERS?
-─────────────
+-------------
 Each teammate's workflow (sma_graph, trading_graph, truth_graph) returns
 data in its own shape.  The orchestrator needs a uniform format so agents
 can read each other's outputs without knowing internal details.
 
 Think of these as "embedding projectors" in multi-modal ML:
-  • A text encoder produces a 768-dim vector
-  • An image encoder produces a 512-dim vector
-  • To fuse them, you project both into a shared 256-dim space
+  - A text encoder produces a 768-dim vector
+  - An image encoder produces a 512-dim vector
+  - To fuse them, you project both into a shared 256-dim space
 
 Same idea here: each adapter projects a domain-specific output dict
 into the shared AgentResult space.
 
 DESIGN RULES
-────────────
-1. Adapters are PURE FUNCTIONS — no side effects, no mutations.
+------------
+1. Adapters are PURE FUNCTIONS -- no side effects, no mutations.
 2. They never modify the original dict; they create a new AgentResult.
-3. Confidence is normalized to float 0.0–1.0 (the shared standard).
+3. Confidence is normalized to float 0.0-1.0 (the shared standard).
 4. The original domain output is preserved in AgentResult["details"]
    for full traceability.
 """
 
-from .schemas import AgentResult, SignalValue
+from .contracts import AgentResult, SignalValue
 
 
 # ---------------------------------------------------------------------------
@@ -38,8 +38,8 @@ def _normalize_signal(raw: str) -> SignalValue:
     SignalValue vocabulary.
 
     The existing workflows use slightly different vocabularies:
-      • sma_graph / truth_graph  →  "bullish" | "bearish" | "neutral"
-      • trading_graph            →  free-text (needs LLM post-processing)
+      - sma_graph / truth_graph  ->  "bullish" | "bearish" | "neutral"
+      - trading_graph            ->  free-text (needs LLM post-processing)
 
     This function handles the structured cases.  Free-text signals
     default to "insufficient_data" until an LLM classifier is added.
@@ -58,8 +58,8 @@ def _clamp_confidence(value: float, source_min: float, source_max: float) -> flo
     """
     Normalize a confidence value from [source_min, source_max] to [0.0, 1.0].
 
-    Example: truth_graph gives confidence as int 0–100.
-             _clamp_confidence(85, 0, 100)  →  0.85
+    Example: truth_graph gives confidence as int 0-100.
+             _clamp_confidence(85, 0, 100)  ->  0.85
     """
     if source_max == source_min:
         return 0.0
@@ -68,7 +68,7 @@ def _clamp_confidence(value: float, source_min: float, source_max: float) -> flo
 
 
 # ---------------------------------------------------------------------------
-# SMA Workflow → AgentResult
+# SMA Workflow -> AgentResult
 # ---------------------------------------------------------------------------
 
 def adapt_sma_to_agent_result(sma_output: dict) -> AgentResult:
@@ -88,8 +88,8 @@ def adapt_sma_to_agent_result(sma_output: dict) -> AgentResult:
     }
 
     Confidence heuristic: we derive confidence from the magnitude
-    of the price-vs-SMA deviation.  A price 5%+ above SMA → high
-    confidence bullish; sitting right on it → low confidence.
+    of the price-vs-SMA deviation.  A price 5%+ above SMA -> high
+    confidence bullish; sitting right on it -> low confidence.
     """
     latest_close = float(sma_output.get("latest_close", 0.0))
     sma_20 = float(sma_output.get("sma_20", 0.0))
@@ -97,7 +97,7 @@ def adapt_sma_to_agent_result(sma_output: dict) -> AgentResult:
     # Derive a confidence proxy from price-SMA deviation
     if sma_20 > 0:
         deviation_pct = abs(latest_close - sma_20) / sma_20
-        # Map 0–5% deviation to 0.3–0.9 confidence range
+        # Map 0-5% deviation to 0.3-0.9 confidence range
         confidence = min(0.9, 0.3 + (deviation_pct * 12.0))
     else:
         confidence = 0.0
@@ -119,7 +119,7 @@ def adapt_sma_to_agent_result(sma_output: dict) -> AgentResult:
 
 
 # ---------------------------------------------------------------------------
-# Trading Workflow → AgentResult
+# Trading Workflow -> AgentResult
 # ---------------------------------------------------------------------------
 
 def adapt_trading_to_agent_result(trading_output: dict) -> AgentResult:
@@ -190,7 +190,7 @@ def adapt_trading_to_agent_result(trading_output: dict) -> AgentResult:
 
 
 # ---------------------------------------------------------------------------
-# Truth Workflow → AgentResult
+# Truth Workflow -> AgentResult
 # ---------------------------------------------------------------------------
 
 def adapt_truth_to_agent_result(truth_output: dict) -> AgentResult:
@@ -205,7 +205,7 @@ def adapt_truth_to_agent_result(truth_output: dict) -> AgentResult:
         "author": "Donald Trump",
         "symbol": "TSLA",
         "direction": "bearish",
-        "confidence_score": 82,         ← int 0–100
+        "confidence_score": 82,         <- int 0-100
         "action": "request_approval",
         "notification_required": true,
         "suggested_position_size": 12500.0,
@@ -213,7 +213,7 @@ def adapt_truth_to_agent_result(truth_output: dict) -> AgentResult:
         "decision_rationale": "..."
     }
 
-    Confidence: truth_graph uses int 0–100, we normalize to 0.0–1.0.
+    Confidence: truth_graph uses int 0-100, we normalize to 0.0-1.0.
     """
     raw_confidence = float(truth_output.get("confidence_score", 0))
 

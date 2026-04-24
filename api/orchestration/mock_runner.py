@@ -14,7 +14,7 @@ using synthetic (but realistic) data.  It verifies that:
 
 Run this script standalone:
     cd api
-    python -m core.mock_runner
+    python -m orchestration.mock_runner
 
 Or import and call run_mock_pipeline() from tests.
 """
@@ -28,8 +28,8 @@ from .adapters import (
     adapt_trading_to_agent_result,
     adapt_truth_to_agent_result,
 )
-from .orchestrator import create_initial_state, handoff, aggregate_recommendation
-from .schemas import AgentResult
+from .engine import create_initial_state, handoff, aggregate_recommendation
+from .contracts import AgentResult
 
 
 # ---------------------------------------------------------------------------
