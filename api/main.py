@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
+from core.orchestrator import run_multiagent_workflow
 from sma_graph import run_sma_workflow
 from trading_graph import run_trading_workflow
 
@@ -21,6 +22,16 @@ class SmaAnalysisRequest(BaseModel):
     symbol: str = Field(..., examples=["AAPL"])
 
 
+class MultiAgentAnalysisRequest(BaseModel):
+    symbol: str = Field(..., examples=["AAPL"])
+    timeframe: str = Field(default="swing", examples=["intraday", "swing"])
+    market_context: str = Field(
+        default="No additional market context provided.",
+        examples=["Fed tone is softer while earnings momentum remains strong."],
+    )
+    risk_level: str = Field(default="medium", examples=["low", "medium", "high"])
+
+
 @app.get("/")
 async def root():
     return {
@@ -29,6 +40,7 @@ async def root():
         "available_workflows": [
             "POST /analysis/basic",
             "POST /analysis/sma",
+            "POST /analysis/multiagent",
         ],
     }
 
@@ -51,3 +63,13 @@ async def basic_analysis(payload: AnalysisRequest):
 @app.post("/analysis/sma")
 async def sma_analysis(payload: SmaAnalysisRequest):
     return run_sma_workflow(symbol=payload.symbol)
+
+
+@app.post("/analysis/multiagent")
+async def multiagent_analysis(payload: MultiAgentAnalysisRequest):
+    return run_multiagent_workflow(
+        symbol=payload.symbol,
+        timeframe=payload.timeframe,
+        market_context=payload.market_context,
+        risk_level=payload.risk_level,
+    )
