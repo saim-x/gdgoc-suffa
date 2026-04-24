@@ -1,0 +1,7 @@
+{
+  "name": "gdgoc-suffa",
+  "private": true,
+  "scripts": {
+    "dev:backend": ".\\api\\.venv\\Scripts\\python.exe -m uvicorn main:app --reload --app-dir api"
+  }
+}
