@@ -48,6 +48,17 @@ export function HomeScreen() {
   const visiblePendingTrades = mainAgentPendingTrades.slice(0, 6);
   const actionableSignals = useMemo(() => recentSignals.filter((signal) => signal.action !== "hold"), [recentSignals]);
   const recentActivity = useMemo(() => activity.slice(0, 6), [activity]);
+  const recentPastTrades = useMemo(() => {
+    const unique = Array.from(
+      new Map(
+        pastTrades.map((trade) => [
+          trade.trade_id ?? `${trade.symbol}-${trade.executed_at}-${trade.position_size}`,
+          trade,
+        ])
+      ).values()
+    );
+    return unique.slice(0, 8);
+  }, [pastTrades]);
   const latestSignalTimestamp = actionableSignals[0]?.timestamp ?? recentSignals[0]?.timestamp ?? null;
 
   return (
@@ -134,7 +145,10 @@ export function HomeScreen() {
       </GlassCard>
 
       <GlassCard innerStyle={styles.sectionCard}>
-        <Text style={styles.sectionTitle}>Autonomous Activity Feed</Text>
+        <View style={styles.sectionHead}>
+          <Text style={styles.sectionTitle}>Autonomous Activity Feed</Text>
+          <Text style={styles.sectionMeta}>{recentActivity.length} recent events</Text>
+        </View>
         {recentActivity.length ? (
           recentActivity.map((item) => (
             <View key={item.id} style={styles.feedRow}>
@@ -166,7 +180,10 @@ export function HomeScreen() {
       </GlassCard>
 
       <GlassCard innerStyle={styles.sectionCardNoRight}>
-        <Text style={styles.sectionTitle}>Signal Radar</Text>
+        <View style={styles.sectionHead}>
+          <Text style={styles.sectionTitle}>Signal Radar</Text>
+          <Text style={styles.sectionMeta}>Directional opportunities</Text>
+        </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: spacing.sm }}>
           {actionableSignals.length ? (
             actionableSignals.map((signal) => <SignalCard key={signal.id} signal={signal} />)
@@ -204,17 +221,23 @@ export function HomeScreen() {
       </GlassCard>
 
       <GlassCard innerStyle={styles.sectionCard}>
-        <Text style={styles.sectionTitle}>Past Trades</Text>
-        {pastTrades.length ? (
-          pastTrades.slice(0, 8).map((trade) => (
-            <View key={`${trade.executed_at}-${trade.symbol}`} style={styles.tradeRow}>
+        <View style={styles.sectionHead}>
+          <Text style={styles.sectionTitle}>Past Trades</Text>
+          <Text style={styles.sectionMeta}>{recentPastTrades.length} closed positions</Text>
+        </View>
+        {recentPastTrades.length ? (
+          recentPastTrades.map((trade) => (
+            <View key={trade.trade_id ?? `${trade.executed_at}-${trade.symbol}-${trade.position_size}`} style={styles.tradeRow}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.tradeAsset}>{trade.symbol}</Text>
                 <Text style={styles.tradeMeta}>
-                  {new Date(trade.executed_at).toLocaleString()} · size {trade.position_size.toFixed(2)}
+                  Closed {new Date(trade.executed_at).toLocaleString()} · size {trade.position_size.toFixed(2)}
                 </Text>
               </View>
-              <Text style={[styles.tradePnl, { color: colorForPnl(trade.pnl) }]}>{trade.pnl.toFixed(2)}</Text>
+              <Text style={[styles.tradePnl, { color: colorForPnl(trade.pnl) }]}>
+                {trade.pnl >= 0 ? "+" : ""}
+                {trade.pnl.toFixed(2)}
+              </Text>
             </View>
           ))
         ) : (

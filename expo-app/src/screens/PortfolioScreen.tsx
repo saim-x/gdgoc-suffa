@@ -29,9 +29,17 @@ export function PortfolioScreen() {
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <Text style={styles.title}>Portfolio</Text>
       <Text style={styles.subtitle}>Restricted-capital governance and performance telemetry.</Text>
+      <View style={styles.quickStatsRow}>
+        <QuickStat label="Open Positions" value={activeTrades.length} />
+        <QuickStat label="Tracked Assets" value={allocations.length} />
+        <QuickStat label="Closed Trades" value={summaryRecords.length} />
+      </View>
 
       <GlassCard innerStyle={styles.card}>
-        <Text style={styles.sectionTitle}>Capital Breakdown</Text>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Capital Breakdown</Text>
+          <Text style={styles.sectionMeta}>Live utilization bands</Text>
+        </View>
         <View style={styles.segmentTrack}>
           <View style={[styles.segmentRestricted, { width: `${restrictedPct}%` }]} />
           <View style={[styles.segmentActive, { width: `${activePct}%` }]} />
@@ -68,7 +76,10 @@ export function PortfolioScreen() {
       </GlassCard>
 
       <GlassCard innerStyle={styles.card}>
-        <Text style={styles.sectionTitle}>Asset Allocation</Text>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Asset Allocation</Text>
+          <Text style={styles.sectionMeta}>By active position size</Text>
+        </View>
         {allocations.length ? (
           allocations.map((item) => (
             <View key={item.asset} style={styles.assetRow}>
@@ -86,6 +97,15 @@ export function PortfolioScreen() {
         )}
       </GlassCard>
     </ScrollView>
+  );
+}
+
+function QuickStat({ label, value }: { label: string; value: number }) {
+  return (
+    <View style={styles.quickStat}>
+      <Text style={styles.quickStatLabel}>{label}</Text>
+      <Text style={styles.quickStatValue}>{value}</Text>
+    </View>
   );
 }
 
@@ -142,6 +162,32 @@ const styles = StyleSheet.create({
     marginTop: -4,
     marginBottom: spacing.xs,
   },
+  quickStatsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  quickStat: {
+    minWidth: 112,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    gap: 2,
+  },
+  quickStatLabel: {
+    color: colors.textMuted,
+    fontFamily: "Inter_500Medium",
+    fontSize: 10,
+  },
+  quickStatValue: {
+    color: colors.text,
+    fontFamily: "Inter_700Bold",
+    fontSize: 14,
+  },
   card: {
     padding: spacing.lg,
     gap: spacing.md,
@@ -150,6 +196,17 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 17,
     fontFamily: "Inter_700Bold",
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+  },
+  sectionMeta: {
+    color: colors.textMuted,
+    fontFamily: "Inter_500Medium",
+    fontSize: 11,
   },
   segmentTrack: {
     height: 20,

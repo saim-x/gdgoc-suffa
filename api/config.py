@@ -65,7 +65,8 @@ SIGNAL_DEDUP_CONFIDENCE_DELTA: int = 3
 
 # ── Indicator Weights (must sum to 1.0) ───────────────────────────────
 INDICATOR_WEIGHTS = {
-    "sma": 0.30,
-    "rsi": 0.30,
-    "sentiment": 0.40,
+    "sma": 0.25,
+    "rsi": 0.25,
+    "sentiment": 0.30,
+    "mirofish": 0.20,
 }

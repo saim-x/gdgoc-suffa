@@ -1,4 +1,5 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useMemo } from "react";
 import { useTrading } from "../context/TradingContext";
 import { colorForPnl, colors, radius, spacing } from "../theme";
 import type { ActivityFilter } from "../types";
@@ -7,12 +8,27 @@ import { GlassCard } from "../components/GlassCard";
 const filters: ActivityFilter[] = ["all", "executed", "pending", "rejected"];
 
 export function ActivityScreen() {
-  const { activityFilter, setActivityFilter, filteredActivity } = useTrading();
+  const { activity, activityFilter, setActivityFilter, filteredActivity } = useTrading();
+  const stats = useMemo(() => {
+    return {
+      total: activity.length,
+      executed: activity.filter((item) => item.type === "executed").length,
+      pending: activity.filter((item) => item.type === "pending").length,
+      rejected: activity.filter((item) => item.type === "rejected").length,
+    };
+  }, [activity]);
 
   return (
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <Text style={styles.title}>Activity</Text>
       <Text style={styles.subtitle}>Execution log and confidence-driven decision trail.</Text>
+
+      <View style={styles.statsRow}>
+        <StatChip label="Total" value={stats.total} />
+        <StatChip label="Executed" value={stats.executed} />
+        <StatChip label="Pending" value={stats.pending} />
+        <StatChip label="Rejected" value={stats.rejected} />
+      </View>
 
       <View style={styles.filterRow}>
         {filters.map((filter) => {
@@ -35,7 +51,21 @@ export function ActivityScreen() {
             <View key={item.id} style={styles.feedItem}>
               <View style={{ flex: 1 }}>
                 <View style={styles.feedTop}>
-                  <Text style={styles.asset}>{item.asset}</Text>
+                  <View style={styles.feedTopLeft}>
+                    <Text style={styles.asset}>{item.asset}</Text>
+                    <View
+                      style={[
+                        styles.typePill,
+                        item.type === "executed"
+                          ? styles.typePillExecuted
+                          : item.type === "pending"
+                            ? styles.typePillPending
+                            : styles.typePillRejected,
+                      ]}
+                    >
+                      <Text style={styles.typePillText}>{item.type.toUpperCase()}</Text>
+                    </View>
+                  </View>
                   <Text style={styles.time}>
                     {new Date(item.timestamp).toLocaleTimeString([], {
                       hour: "2-digit",
@@ -64,6 +94,15 @@ export function ActivityScreen() {
   );
 }
 
+function StatChip({ label, value }: { label: string; value: number }) {
+  return (
+    <View style={styles.statChip}>
+      <Text style={styles.statLabel}>{label}</Text>
+      <Text style={styles.statValue}>{value}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   content: {
     paddingHorizontal: spacing.lg,
@@ -82,6 +121,31 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: "Inter_400Regular",
     marginTop: -6,
+  },
+  statsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+  },
+  statChip: {
+    minWidth: 78,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 7,
+    gap: 2,
+  },
+  statLabel: {
+    color: colors.textMuted,
+    fontSize: 10,
+    fontFamily: "Inter_500Medium",
+  },
+  statValue: {
+    color: colors.text,
+    fontSize: 13,
+    fontFamily: "Inter_700Bold",
   },
   filterRow: {
     flexDirection: "row",
@@ -124,10 +188,34 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
+  feedTopLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+  },
   asset: {
     color: colors.text,
     fontFamily: "Inter_700Bold",
     fontSize: 14,
+  },
+  typePill: {
+    borderRadius: radius.pill,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  typePillExecuted: {
+    backgroundColor: "#E8F7EF",
+  },
+  typePillPending: {
+    backgroundColor: "#FFF7E2",
+  },
+  typePillRejected: {
+    backgroundColor: "#FDECEC",
+  },
+  typePillText: {
+    fontSize: 9,
+    color: colors.text,
+    fontFamily: "Inter_700Bold",
   },
   time: {
     color: colors.textMuted,

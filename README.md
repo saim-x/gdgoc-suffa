@@ -43,6 +43,7 @@ We moved away from a simple stateless script to a fully persistent polling engin
 ```text
 Data Ingestion (yfinance, 30s cache)
     → Signal Engine (SMA, RSI, Groq LLM)
+        → MiroFish Swarm Layer (multi-agent consensus refinement)
         → Aggregator (Weighted Confidence)
             → Agent Engine (ORION, ATLAS, SENTINEL)
                 → Trade Simulator (Fees + Slippage)

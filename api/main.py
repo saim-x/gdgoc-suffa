@@ -255,6 +255,16 @@ async def set_risk_level(payload: RiskLevelRequest):
     return {"risk_level": payload.level}
 
 
+@app.post("/settings/reset-data")
+async def reset_trading_data():
+    """Clear all simulated trades and history; restore capital and agent defaults (dev / solo testing)."""
+    from engine.data_ingest import clear_cache
+
+    await db.reset_all_trading_data()
+    clear_cache()
+    return {"ok": True, "message": "Trading data cleared; portfolio and agents restored to defaults."}
+
+
 # ── Trades ────────────────────────────────────────────────────────────
 
 @app.get("/trades")

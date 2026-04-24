@@ -690,3 +690,60 @@ async def get_daily_summary(date_str: str | None = None) -> dict[str, Any] | Non
         return d
     finally:
         await db.close()
+
+
+async def reset_all_trading_data() -> None:
+    """
+    Wipe trades, signals, pending queue, activity, and daily summaries;
+    restore portfolio capital and default agent rows for a clean test state.
+    """
+    async with _write_lock:
+        db = await get_db()
+        try:
+            await db.execute("DELETE FROM trades")
+            await db.execute("DELETE FROM signals")
+            await db.execute("DELETE FROM pending_approvals")
+            await db.execute("DELETE FROM activity")
+            await db.execute("DELETE FROM daily_summaries")
+
+            now = _now()
+            await db.execute(
+                """UPDATE portfolio SET
+                   total_capital = ?, available_capital = ?,
+                   total_pnl = 0, today_pnl = 0, updated_at = ?
+                   WHERE id = 'main'""",
+                (DEFAULT_TOTAL_CAPITAL, DEFAULT_TOTAL_CAPITAL, now),
+            )
+
+            defaults_by_id = {a["id"]: a for a in DEFAULT_AGENTS}
+            agent_rows = await db.execute_fetchall("SELECT id FROM agents")
+            for row in agent_rows:
+                aid = row["id"]
+                if aid in defaults_by_id:
+                    d = defaults_by_id[aid]
+                    await db.execute(
+                        """UPDATE agents SET
+                           name = ?, strategy = ?, assigned_capital = ?,
+                           used_capital = 0, confidence_threshold = ?,
+                           status = ?, performance = 0, updated_at = ?
+                           WHERE id = ?""",
+                        (
+                            d["name"],
+                            d["strategy"],
+                            d["assigned_capital"],
+                            d["confidence_threshold"],
+                            d["status"],
+                            now,
+                            aid,
+                        ),
+                    )
+                else:
+                    await db.execute(
+                        "UPDATE agents SET used_capital = 0, performance = 0, updated_at = ? WHERE id = ?",
+                        (now, aid),
+                    )
+
+            await db.commit()
+            logger.info("Trading data reset: tables cleared, portfolio and agents restored to defaults")
+        finally:
+            await db.close()

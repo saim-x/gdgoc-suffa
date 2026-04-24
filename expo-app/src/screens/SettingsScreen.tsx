@@ -27,6 +27,8 @@ export function SettingsScreen() {
     setCapitalLimit,
     defaultConfidenceThreshold,
     setDefaultConfidenceThreshold,
+    resetAllTradingData,
+    resettingData,
   } = useTrading();
 
   const [capitalInput, setCapitalInput] = useState(String(Math.round(capitalLimit)));
@@ -36,6 +38,21 @@ export function SettingsScreen() {
     if (connectionStatus === "offline") return "Offline";
     return "Not checked";
   }, [connectionStatus]);
+
+  const onResetData = () => {
+    Alert.alert(
+      "Delete all trading data?",
+      "This removes trades, signals, pending approvals, activity, and daily summaries on the server. Portfolio capital and agent assignments return to defaults so you can test again.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete everything",
+          style: "destructive",
+          onPress: () => void resetAllTradingData(),
+        },
+      ]
+    );
+  };
 
   const onAutonomousToggle = (next: boolean) => {
     if (!next) {
@@ -56,6 +73,20 @@ export function SettingsScreen() {
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <Text style={styles.title}>Settings</Text>
       <Text style={styles.subtitle}>Risk controls, thresholds, security, and device preferences.</Text>
+      <View style={styles.metaRow}>
+        <View style={styles.metaChip}>
+          <Text style={styles.metaChipLabel}>API</Text>
+          <Text style={[styles.metaChipValue, connectionStatus === "online" && { color: colors.profit }]}>{statusLabel}</Text>
+        </View>
+        <View style={styles.metaChip}>
+          <Text style={styles.metaChipLabel}>Mode</Text>
+          <Text style={styles.metaChipValue}>{autonomousMode ? "Autonomous" : "Approval"}</Text>
+        </View>
+        <View style={styles.metaChip}>
+          <Text style={styles.metaChipLabel}>Risk</Text>
+          <Text style={styles.metaChipValue}>{riskLevel.toUpperCase()}</Text>
+        </View>
+      </View>
 
       <GlassCard innerStyle={styles.card}>
         <Text style={styles.sectionTitle}>Connection</Text>
@@ -129,6 +160,20 @@ export function SettingsScreen() {
         <SettingSwitch label="Notifications" value={notificationsEnabled} onValueChange={setNotificationsEnabled} />
         <SettingSwitch label="Biometric lock" value={biometricLock} onValueChange={setBiometricLock} />
       </GlassCard>
+
+      <GlassCard innerStyle={styles.card}>
+        <Text style={styles.sectionTitle}>Data</Text>
+        <Text style={styles.hint}>
+          Server-side only. Use when simulated capital is stuck so agents can trade again.
+        </Text>
+        <Pressable
+          style={({ pressed }) => [styles.dangerButton, pressed && styles.pressed]}
+          onPress={onResetData}
+          disabled={resettingData}
+        >
+          <Text style={styles.dangerButtonText}>{resettingData ? "Resetting…" : "Reset all trading data"}</Text>
+        </Pressable>
+      </GlassCard>
     </ScrollView>
   );
 }
@@ -173,6 +218,32 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: "Inter_400Regular",
     marginTop: -6,
+  },
+  metaRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+  },
+  metaChip: {
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  metaChipLabel: {
+    color: colors.textMuted,
+    fontFamily: "Inter_500Medium",
+    fontSize: 10,
+  },
+  metaChipValue: {
+    color: colors.text,
+    fontFamily: "Inter_700Bold",
+    fontSize: 11,
   },
   card: {
     padding: spacing.lg,
@@ -262,5 +333,24 @@ const styles = StyleSheet.create({
   },
   pressed: {
     transform: [{ scale: 0.98 }],
+  },
+  hint: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    lineHeight: 17,
+  },
+  dangerButton: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: "#C94C4C",
+    backgroundColor: "#FCECEC",
+    paddingVertical: spacing.md,
+    alignItems: "center",
+  },
+  dangerButtonText: {
+    color: "#A32E2E",
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 14,
   },
 });

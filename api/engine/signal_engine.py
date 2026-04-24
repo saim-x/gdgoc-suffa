@@ -11,6 +11,7 @@ from indicators.rsi import run_rsi_indicator
 from indicators.sentiment import run_sentiment_indicator
 from indicators.aggregator import aggregate_signals
 from engine.data_ingest import fetch_price_data
+from engine.mirofish_layer import run_mirofish_processing_layer
 
 import database as db
 
@@ -70,8 +71,17 @@ async def generate_signal(asset: str, context: str = "", dedupe: bool = True) ->
     sentiment_result = run_sentiment_indicator(asset, context)
     sentiment_result["indicator"] = "sentiment"
 
+    # Step 2.5: MiroFish swarm consensus layer (additional processing layer)
+    mirofish_result = run_mirofish_processing_layer(
+        asset=asset,
+        indicator_results=[sma_result, rsi_result, sentiment_result],
+        closes=closes,
+        context=context,
+    )
+    mirofish_result["indicator"] = "mirofish"
+
     # Step 3: Aggregate
-    unified = aggregate_signals([sma_result, rsi_result, sentiment_result])
+    unified = aggregate_signals([sma_result, rsi_result, sentiment_result, mirofish_result])
 
     # Skip storing duplicate near-identical signals generated too recently.
     if dedupe:

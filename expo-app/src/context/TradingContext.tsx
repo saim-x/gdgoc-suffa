@@ -25,6 +25,8 @@ type TradingContextValue = {
   connectionStatus: "idle" | "online" | "offline";
   checkingConnection: boolean;
   pingBackend: () => Promise<void>;
+  resettingData: boolean;
+  resetAllTradingData: () => Promise<boolean>;
   systemStatus: SystemStatus;
   analyzing: boolean;
   autonomousMode: boolean;
@@ -114,10 +116,41 @@ function riskFraction(level: RiskLevel): number {
   return 0.2;
 }
 
+function toTimestampMs(value: string): number {
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function dedupeActivityItems(items: ActivityItem[]): ActivityItem[] {
+  const sorted = [...items].sort((a, b) => toTimestampMs(b.timestamp) - toTimestampMs(a.timestamp));
+  const seenById = new Set<string>();
+  const seenFingerprintAt = new Map<string, number>();
+  const deduped: ActivityItem[] = [];
+
+  for (const item of sorted) {
+    if (seenById.has(item.id)) continue;
+    seenById.add(item.id);
+
+    const normalizedNote = item.note.trim().toLowerCase().replace(/\s+/g, " ");
+    const fingerprint = `${item.type}|${item.asset}|${item.action}|${item.confidence}|${normalizedNote}`;
+    const ts = toTimestampMs(item.timestamp);
+    const previousTs = seenFingerprintAt.get(fingerprint);
+
+    // Collapse near-identical bursts that appear as duplicates/triplets in feed.
+    if (previousTs !== undefined && Math.abs(previousTs - ts) <= 120000) continue;
+
+    seenFingerprintAt.set(fingerprint, ts);
+    deduped.push(item);
+  }
+
+  return deduped;
+}
+
 export function TradingProvider({ children }: { children: React.ReactNode }) {
   const [apiUrl, setApiUrl] = useState(DEFAULT_API_URL);
   const [connectionStatus, setConnectionStatus] = useState<"idle" | "online" | "offline">("idle");
   const [checkingConnection, setCheckingConnection] = useState(false);
+  const [resettingData, setResettingData] = useState(false);
   const [systemStatus, setSystemStatus] = useState<SystemStatus>("idle");
   const [analyzing, setAnalyzing] = useState(false);
 
@@ -246,7 +279,7 @@ export function TradingProvider({ children }: { children: React.ReactNode }) {
           pnl: a.pnl,
           note: a.note,
         }));
-        setActivity(mapped);
+        setActivity(dedupeActivityItems(mapped));
       }
 
       // Process pending
@@ -276,17 +309,24 @@ export function TradingProvider({ children }: { children: React.ReactNode }) {
       // Process trades (for summary records)
       if (tradesRes.status === "fulfilled" && tradesRes.value.ok) {
         const data = await tradesRes.value.json();
-        const mapped: SummaryRecord[] = (data.trades || []).map((t: any) => ({
-          agent_id: t.agent_id,
-          symbol: t.asset,
-          source: "system",
-          confidence_score: t.confidence,
-          action: t.status === "closed" ? "execute" : "execute",
-          rationale: "",
-          pnl: t.pnl,
-          executed_at: t.opened_at,
-          position_size: t.position_size,
-        }));
+        const closedTrades = (data.trades || []).filter((t: any) => t.status === "closed");
+        const uniqueClosedTrades = Array.from(new Map(closedTrades.map((t: any) => [t.id, t])).values());
+
+        const mapped: SummaryRecord[] = uniqueClosedTrades
+          .map((t: any) => ({
+            trade_id: t.id,
+            agent_id: t.agent_id,
+            symbol: t.asset,
+            source: "system",
+            confidence_score: t.confidence,
+            action: "execute" as const,
+            rationale: "",
+            pnl: Number(t.pnl ?? 0),
+            executed_at: t.closed_at || t.opened_at,
+            position_size: Number(t.position_size ?? 0),
+          }))
+          .sort((a, b) => toTimestampMs(b.executed_at) - toTimestampMs(a.executed_at));
+
         setSummaryRecords(mapped);
       }
 
@@ -295,6 +335,25 @@ export function TradingProvider({ children }: { children: React.ReactNode }) {
       console.warn("[TradingContext] Poll error:", err instanceof Error ? err.message : err);
     }
   }, [apiUrl]);
+
+  const resetAllTradingData = useCallback(async () => {
+    setResettingData(true);
+    try {
+      const response = await fetch(`${apiUrl}/settings/reset-data`, { method: "POST" });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `Reset failed (${response.status})`);
+      }
+      setDailySummary(null);
+      await pollData();
+      return true;
+    } catch (err) {
+      Alert.alert("Reset failed", err instanceof Error ? err.message : "Unknown error");
+      return false;
+    } finally {
+      setResettingData(false);
+    }
+  }, [apiUrl, pollData]);
 
   // ── Start polling ──────────────────────────────────────────────────
   useEffect(() => {
@@ -500,6 +559,8 @@ export function TradingProvider({ children }: { children: React.ReactNode }) {
     connectionStatus,
     checkingConnection,
     pingBackend,
+    resetAllTradingData,
+    resettingData,
     systemStatus,
     analyzing,
     autonomousMode,

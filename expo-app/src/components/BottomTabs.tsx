@@ -59,8 +59,8 @@ const styles = StyleSheet.create({
   inner: {
     borderRadius: radius.pill,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.7)",
-    backgroundColor: "rgba(255, 255, 255, 0.85)",
+    borderColor: "rgba(212, 226, 217, 0.9)",
+    backgroundColor: "rgba(250, 255, 252, 0.96)",
     padding: 4,
     flexDirection: "row",
     justifyContent: "space-between",
@@ -79,7 +79,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   activeItem: {
-    backgroundColor: "rgba(32,168,111,0.12)",
+    backgroundColor: "rgba(32,168,111,0.17)",
   },
   label: {
     color: colors.tabMuted,
@@ -87,7 +87,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
   activeLabel: {
-    color: colors.text,
+    color: "#11472F",
   },
   pressed: {
     transform: [{ scale: 0.98 }],

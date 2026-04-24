@@ -23,6 +23,7 @@ export type AnalyzeResponse = {
 };
 
 export type SummaryRecord = {
+  trade_id?: string;
   agent_id: string;
   symbol: string;
   source: string;
