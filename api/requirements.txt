@@ -1,3 +1,6 @@
 fastapi==0.136.1
 uvicorn==0.46.0
-
+langchain==1.2.15
+langchain-groq==1.1.2
+langgraph==1.1.9
+python-dotenv==1.2.2
