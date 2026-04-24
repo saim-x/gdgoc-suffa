@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "name": "Suffa Truth Layer",
+    "slug": "suffa-truth-layer",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#050505"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "plugins": [
+      "expo-asset"
+    ]
+  }
+}
