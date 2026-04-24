@@ -14,6 +14,7 @@ class TechnicalScanResult(TypedDict):
     trend_signal: str
     momentum_signal: str
     signal: str
+    score: int
     reason: str
     candles_analyzed: int
 
@@ -22,6 +23,7 @@ class TechnicalWatchlistState(TypedDict):
     symbols: list[str]
     raw_price_data: dict[str, list[float]]
     scan_results: list[TechnicalScanResult]
+    top_candidates: list[str]
 
 
 def collect_price_data(state: TechnicalWatchlistState) -> TechnicalWatchlistState:
@@ -69,6 +71,7 @@ def compute_sma_signal(state: TechnicalWatchlistState) -> TechnicalWatchlistStat
                     "trend_signal": "insufficient_data",
                     "momentum_signal": "insufficient_data",
                     "signal": "insufficient_data",
+                    "score": 0,
                     "reason": "Not enough daily candle data to compute SMA20 and RSI14.",
                     "candles_analyzed": candles_analyzed,
                 }
@@ -103,6 +106,19 @@ def compute_sma_signal(state: TechnicalWatchlistState) -> TechnicalWatchlistStat
         else:
             signal = "neutral"
 
+        score = 50
+        if trend_signal == "bullish":
+            score += 30
+        elif trend_signal == "bearish":
+            score -= 30
+
+        if momentum_signal == "bullish":
+            score += 15
+        elif momentum_signal == "bearish":
+            score -= 15
+
+        score = max(0, min(100, score))
+
         if trend_signal == "bullish":
             trend_reason = "Price is above the 20-day SMA."
         elif trend_signal == "bearish":
@@ -121,6 +137,7 @@ def compute_sma_signal(state: TechnicalWatchlistState) -> TechnicalWatchlistStat
                 "trend_signal": trend_signal,
                 "momentum_signal": momentum_signal,
                 "signal": signal,
+                "score": score,
                 "reason": reason,
                 "candles_analyzed": candles_analyzed,
             }
@@ -131,7 +148,14 @@ def compute_sma_signal(state: TechnicalWatchlistState) -> TechnicalWatchlistStat
 
 
 def summarize_watchlist(state: TechnicalWatchlistState) -> TechnicalWatchlistState:
-    state["scan_results"] = sorted(state["scan_results"], key=lambda item: item["symbol"])
+    ranked_results = sorted(
+        state["scan_results"],
+        key=lambda item: (-item["score"], item["symbol"]),
+    )
+    state["scan_results"] = ranked_results
+    state["top_candidates"] = [
+        item["symbol"] for item in ranked_results if item["signal"] == "bullish"
+    ][:3]
     return state
 
 
@@ -159,12 +183,14 @@ def run_technical_watchlist_scan(symbols: list[str]) -> dict:
             "symbols": normalized_symbols,
             "raw_price_data": {},
             "scan_results": [],
+            "top_candidates": [],
         }
     )
 
     return {
         "workflow": "technical_watchlist_sma_rsi_scan",
-        "agent": "technical_phase_2",
+        "agent": "technical_phase_3",
         "indicators": ["sma_20", "rsi_14"],
+        "top_candidates": result["top_candidates"],
         "results": result["scan_results"],
     }
