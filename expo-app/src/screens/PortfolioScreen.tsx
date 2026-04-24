@@ -37,7 +37,7 @@ export function PortfolioScreen() {
           <View style={[styles.segmentActive, { width: `${activePct}%` }]} />
         </View>
         <View style={styles.legendRow}>
-          <LegendDot color="#D97706" label={`Restricted ${metrics.restrictedCapital.toFixed(0)}`} />
+          <LegendDot color="#5D8A72" label={`Restricted ${metrics.restrictedCapital.toFixed(0)}`} />
           <LegendDot color="#1E9B62" label={`Active ${metrics.activeCapital.toFixed(0)}`} />
         </View>
       </GlassCard>
@@ -125,7 +125,7 @@ function LegendDot({ color, label }: { color: string; label: string }) {
 const styles = StyleSheet.create({
   content: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xl,
+    paddingTop: spacing.xxl,
     paddingBottom: 120,
     gap: spacing.md,
   },
@@ -154,7 +154,7 @@ const styles = StyleSheet.create({
   segmentTrack: {
     height: 20,
     borderRadius: radius.pill,
-    backgroundColor: "#EEE8DB",
+    backgroundColor: "#E5EFE8",
     overflow: "hidden",
   },
   segmentRestricted: {
@@ -162,7 +162,7 @@ const styles = StyleSheet.create({
     left: 0,
     top: 0,
     bottom: 0,
-    backgroundColor: "#F59E0B",
+    backgroundColor: "#5D8A72",
     borderRadius: radius.pill,
   },
   segmentActive: {
@@ -211,8 +211,8 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   periodChipSelected: {
-    borderColor: "#E7B25D",
-    backgroundColor: "#FFF4DE",
+    borderColor: "#20A86F",
+    backgroundColor: "#EAF8F1",
   },
   periodText: {
     color: colors.textMuted,
@@ -240,13 +240,13 @@ const styles = StyleSheet.create({
   assetBarTrack: {
     height: 8,
     borderRadius: radius.pill,
-    backgroundColor: "#EEE8DB",
+    backgroundColor: "#E5EFE8",
     overflow: "hidden",
   },
   assetBarFill: {
     height: 8,
     borderRadius: radius.pill,
-    backgroundColor: "#D97706",
+    backgroundColor: "#20A86F",
   },
   assetValue: {
     color: colors.textSoft,

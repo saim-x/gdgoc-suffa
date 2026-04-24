@@ -102,8 +102,8 @@ export function SettingsScreen() {
             value={defaultConfidenceThreshold}
             onValueChange={setDefaultConfidenceThreshold}
             minimumTrackTintColor={colors.aiBlue}
-            maximumTrackTintColor="#E7E1D4"
-            thumbTintColor="#D97706"
+            maximumTrackTintColor="#DCE9E1"
+            thumbTintColor="#20A86F"
           />
         </View>
 
@@ -148,7 +148,7 @@ function SettingSwitch({
       <Switch
         value={value}
         onValueChange={onValueChange}
-        trackColor={{ false: "#D6CFBF", true: "#F59E0B" }}
+        trackColor={{ false: "#C8D8CD", true: "#20A86F" }}
         thumbColor="#FFFFFF"
       />
     </View>
@@ -158,7 +158,7 @@ function SettingSwitch({
 const styles = StyleSheet.create({
   content: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xl,
+    paddingTop: spacing.xxl,
     paddingBottom: 120,
     gap: spacing.md,
   },
@@ -200,7 +200,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: "#FFFEFC",
+    backgroundColor: "#FFFFFF",
     color: colors.text,
     fontFamily: "Inter_500Medium",
     fontSize: 14,
@@ -210,8 +210,8 @@ const styles = StyleSheet.create({
   button: {
     borderRadius: radius.pill,
     borderWidth: 1,
-    borderColor: "#E7B25D",
-    backgroundColor: "#FFF4DE",
+    borderColor: "#20A86F",
+    backgroundColor: "#EAF8F1",
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
@@ -238,8 +238,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   riskChipActive: {
-    borderColor: "#E7B25D",
-    backgroundColor: "#FFF4DE",
+    borderColor: "#20A86F",
+    backgroundColor: "#EAF8F1",
   },
   riskText: {
     color: colors.textMuted,
@@ -256,7 +256,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: "#FFFEFC",
+    backgroundColor: "#FFFFFF",
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
   },
