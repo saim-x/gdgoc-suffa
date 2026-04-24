@@ -1,9 +1,12 @@
-"""Phase 2 technical analysis graph for a multi-stock SMA and RSI scan."""
+"""Phase 4 technical analysis graph aligned to shared multi-agent state."""
 
 from typing import TypedDict
 
 import yfinance as yf
 from langgraph.graph import END, START, StateGraph
+
+from core.schemas import AgentResult, CandidateIdea
+from core.state import SymbolAnalysis
 
 
 class TechnicalScanResult(TypedDict):
@@ -159,6 +162,57 @@ def summarize_watchlist(state: TechnicalWatchlistState) -> TechnicalWatchlistSta
     return state
 
 
+def build_technical_agent_result(scan_result: TechnicalScanResult) -> AgentResult:
+    confidence = round(scan_result["score"] / 100, 2)
+    warnings: list[str] = []
+
+    if scan_result["momentum_signal"] == "bearish":
+        warnings.append("Momentum is stretched on RSI14.")
+    elif scan_result["momentum_signal"] == "bullish":
+        warnings.append("RSI14 suggests oversold conditions.")
+
+    return {
+        "status": "completed"
+        if scan_result["signal"] != "insufficient_data"
+        else "failed",
+        "signal": scan_result["signal"],
+        "confidence": confidence,
+        "summary": scan_result["reason"],
+        "metrics": {
+            "latest_close": scan_result["latest_close"],
+            "sma_20": scan_result["sma_20"],
+            "rsi_14": scan_result["rsi_14"],
+            "score": scan_result["score"],
+            "candles_analyzed": scan_result["candles_analyzed"],
+        },
+        "details": {
+            "trend_signal": scan_result["trend_signal"],
+            "momentum_signal": scan_result["momentum_signal"],
+        },
+        "warnings": warnings,
+    }
+
+
+def build_candidate_idea(scan_result: TechnicalScanResult) -> CandidateIdea:
+    return {
+        "symbol": scan_result["symbol"],
+        "source_agents": ["technical_phase_4"],
+        "why_selected": scan_result["reason"],
+        "priority": round(scan_result["score"] / 100, 2),
+    }
+
+
+def build_symbol_analysis_map(scan_results: list[TechnicalScanResult]) -> dict[str, SymbolAnalysis]:
+    symbol_analyses: dict[str, SymbolAnalysis] = {}
+
+    for scan_result in scan_results:
+        symbol_analyses[scan_result["symbol"]] = {
+            "technical": build_technical_agent_result(scan_result)
+        }
+
+    return symbol_analyses
+
+
 def build_graph():
     workflow = StateGraph(TechnicalWatchlistState)
     workflow.add_node("collect_price_data", collect_price_data)
@@ -189,8 +243,15 @@ def run_technical_watchlist_scan(symbols: list[str]) -> dict:
 
     return {
         "workflow": "technical_watchlist_sma_rsi_scan",
-        "agent": "technical_phase_3",
+        "agent": "technical_phase_4",
         "indicators": ["sma_20", "rsi_14"],
         "top_candidates": result["top_candidates"],
+        "candidate_symbols": result["top_candidates"],
+        "candidate_ideas": [
+            build_candidate_idea(item)
+            for item in result["scan_results"]
+            if item["symbol"] in result["top_candidates"]
+        ],
+        "symbol_analyses": build_symbol_analysis_map(result["scan_results"]),
         "results": result["scan_results"],
     }
