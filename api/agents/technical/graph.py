@@ -1,0 +1,2 @@
+"""Technical analysis graph placeholder."""
+
