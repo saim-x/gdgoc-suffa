@@ -1,7 +1,11 @@
 api/.venv/
 api/.env
+api/venv/
+api/data/
+api/test_endpoints.py
 __pycache__/
 *.pyc
 node_modules/
 expo-app/node_modules/
 expo-app/.expo/
+.env

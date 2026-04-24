@@ -1,4 +1,5 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useCallback, useEffect, useMemo, useState, useRef } from "react";
+import Constants from "expo-constants";
 import { Alert, Platform } from "react-native";
 import type {
   ActivityFilter,
@@ -60,21 +61,50 @@ type TradingContextValue = {
 };
 
 const TradingContext = createContext<TradingContextValue | null>(null);
-const DEFAULT_API_URL = Platform.OS === "android" ? "http://10.0.2.2:8000" : "http://localhost:8000";
+
+// Resolve backend URL: extract dev machine IP from Expo, fallback to LAN IP
+function getDefaultApiUrl(): string {
+  try {
+    // Try multiple Expo Constants paths to find the dev machine IP
+    const candidates: (string | undefined)[] = [
+      Constants.expoGoConfig?.debuggerHost,
+      Constants.expoConfig?.hostUri,
+      (Constants as any).manifest?.debuggerHost,
+      (Constants as any).manifest2?.extra?.expoGo?.debuggerHost,
+    ];
+    for (const host of candidates) {
+      if (host && typeof host === "string" && host.includes(":")) {
+        const ip = host.split(":")[0];
+        if (ip && ip !== "127.0.0.1" && ip !== "localhost") {
+          const url = `http://${ip}:8000`;
+          console.log("[TradingContext] Auto-detected backend URL:", url);
+          return url;
+        }
+      }
+    }
+  } catch {}
+  // Hardcoded LAN IP fallback (your machine's IP)
+  const fallback = Platform.OS === "android" ? "http://10.0.2.2:8000" : "http://192.168.0.105:8000";
+  console.log("[TradingContext] Using fallback URL:", fallback);
+  return fallback;
+}
+const DEFAULT_API_URL = getDefaultApiUrl();
+
+const POLL_INTERVAL = 8_000; // 8 seconds
 
 const initialMainAgent: AgentConfig = {
-  id: "main-agent-orion",
+  id: "agent-orion",
   name: "ORION",
-  strategy: "Truth-layer event trading",
-  assignedCapital: 50000,
+  strategy: "Event-driven signal trading",
+  assignedCapital: 200000,
   performance: 0,
   confidenceThreshold: 85,
-  status: "paused",
+  status: "active",
 };
 
-function toTradeAction(direction: AnalyzeResponse["direction"]): TradeAction {
-  if (direction === "bullish") return "buy";
-  if (direction === "bearish") return "sell";
+function toTradeAction(direction: string): TradeAction {
+  if (direction === "bullish" || direction === "buy") return "buy";
+  if (direction === "bearish" || direction === "sell") return "sell";
   return "hold";
 }
 
@@ -91,8 +121,8 @@ export function TradingProvider({ children }: { children: React.ReactNode }) {
   const [systemStatus, setSystemStatus] = useState<SystemStatus>("idle");
   const [analyzing, setAnalyzing] = useState(false);
 
-  const [autonomousMode, setAutonomousMode] = useState(false);
-  const [riskLevel, setRiskLevel] = useState<RiskLevel>("medium");
+  const [autonomousMode, setAutonomousModeLocal] = useState(false);
+  const [riskLevel, setRiskLevelLocal] = useState<RiskLevel>("medium");
   const [biometricLock, setBiometricLock] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [capitalLimit, setCapitalLimit] = useState(500000);
@@ -107,111 +137,246 @@ export function TradingProvider({ children }: { children: React.ReactNode }) {
   const [dailySummary, setDailySummary] = useState<DailySummaryResponse | null>(null);
   const [pendingTrades, setPendingTrades] = useState<PendingDecision[]>([]);
   const [trendPeriod, setTrendPeriod] = useState<TrendPeriod>("1D");
+  const [portfolioState, setPortfolioState] = useState<any>(null);
 
-  const mainAgent = agents[0];
+  const mainAgent = agents[0] ?? initialMainAgent;
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  useEffect(() => {
-    void pingBackend();
-  }, []);
-
-  async function pingBackend() {
+  // ── Ping backend ───────────────────────────────────────────────────
+  const pingBackend = useCallback(async () => {
     setCheckingConnection(true);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
     try {
-      const response = await fetch(`${apiUrl}/health`);
-      if (!response.ok) {
-        throw new Error(`Health check failed (${response.status})`);
-      }
+      console.log("[TradingContext] Pinging backend at", apiUrl);
+      const response = await fetch(`${apiUrl}/health`, { signal: controller.signal });
+      clearTimeout(timeout);
+      if (!response.ok) throw new Error(`Health check failed (${response.status})`);
+      console.log("[TradingContext] Backend ONLINE");
       setConnectionStatus("online");
-    } catch {
+    } catch (err) {
+      clearTimeout(timeout);
+      console.warn("[TradingContext] Backend OFFLINE:", err instanceof Error ? err.message : err);
       setConnectionStatus("offline");
     } finally {
       setCheckingConnection(false);
     }
-  }
+  }, [apiUrl]);
 
-  const updateAgent = (id: string, patch: Partial<AgentConfig>) => {
-    setAgents((prev) => prev.map((agent) => (agent.id === id ? { ...agent, ...patch } : agent)));
-  };
-
-  const addActivity = (item: ActivityItem) => {
-    setActivity((prev) => [item, ...prev].slice(0, 250));
-  };
-
-  const addActiveTrade = (record: SummaryRecord, action: TradeAction) => {
-    const trade: ActiveTrade = {
-      id: `trade-${Date.now()}`,
-      asset: record.symbol,
-      entryPrice: 0,
-      currentPrice: 0,
-      pnl: record.pnl,
-      positionSize: record.position_size,
-      openedAt: record.executed_at,
-    };
-    setActiveTrades((prev) => [trade, ...prev].slice(0, 40));
-    addActivity({
-      id: `activity-${Date.now()}`,
-      timestamp: record.executed_at,
-      type: "executed",
-      asset: record.symbol,
-      confidence: record.confidence_score,
-      action,
-      pnl: record.pnl,
-      note: record.rationale,
-    });
-  };
-
-  const resolvePendingTrade = (tradeId: string, accepted: boolean) => {
-    const pending = pendingTrades.find((trade) => trade.id === tradeId);
-    if (!pending) return;
-
-    const now = new Date().toISOString();
-    if (accepted) {
-      const executionRecord: SummaryRecord = {
-        agent_id: mainAgent.id,
-        symbol: pending.symbol,
-        source: pending.source,
-        confidence_score: pending.confidence,
-        action: "execute",
-        rationale: `User approved pending trade. ${pending.rationale}`,
-        pnl: 0,
-        executed_at: now,
-        position_size: pending.positionSize,
+  // ── Poll backend data ──────────────────────────────────────────────
+  const pollData = useCallback(async () => {
+    try {
+      const makeFetch = (path: string) => {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+        return fetch(`${apiUrl}${path}`, { signal: controller.signal }).finally(() => clearTimeout(timeout));
       };
-      setSummaryRecords((prev) => [executionRecord, ...prev]);
-      addActiveTrade(executionRecord, pending.suggestedAction);
-      setSystemStatus("executing");
-      setTimeout(() => setSystemStatus("idle"), 900);
-    } else {
-      addActivity({
-        id: `activity-${Date.now()}`,
-        timestamp: now,
-        type: "rejected",
-        asset: pending.symbol,
-        confidence: pending.confidence,
-        action: pending.suggestedAction,
-        pnl: 0,
-        note: "User rejected pending trade setup.",
-      });
+
+      const [signalsRes, agentsRes, portfolioRes, activityRes, pendingRes, tradesRes] = await Promise.allSettled([
+        makeFetch("/signals?limit=30"),
+        makeFetch("/agents"),
+        makeFetch("/portfolio"),
+        makeFetch("/activity?limit=100"),
+        makeFetch("/pending"),
+        makeFetch("/trades?limit=50"),
+      ]);
+
+      // Process signals
+      if (signalsRes.status === "fulfilled" && signalsRes.value.ok) {
+        const data = await signalsRes.value.json();
+        const mapped: SignalInsight[] = (data.signals || []).map((s: any) => ({
+          id: s.id,
+          asset: s.asset,
+          confidence: s.confidence_score,
+          action: toTradeAction(s.signal),
+          timestamp: s.created_at,
+          source: "x" as const,
+        }));
+        setRecentSignals(mapped);
+      }
+
+      // Process agents
+      if (agentsRes.status === "fulfilled" && agentsRes.value.ok) {
+        const data = await agentsRes.value.json();
+        const mapped: AgentConfig[] = (data.agents || []).map((a: any) => ({
+          id: a.id,
+          name: a.name,
+          strategy: a.strategy,
+          assignedCapital: a.assigned_capital,
+          performance: a.performance,
+          confidenceThreshold: a.confidence_threshold,
+          status: a.status === "active" ? "active" : "paused",
+        }));
+        if (mapped.length > 0) setAgents(mapped);
+      }
+
+      // Process portfolio
+      if (portfolioRes.status === "fulfilled" && portfolioRes.value.ok) {
+        const data = await portfolioRes.value.json();
+        setPortfolioState(data);
+        setAutonomousModeLocal(data.autonomous_mode ?? false);
+        setRiskLevelLocal(data.risk_level ?? "medium");
+
+        // Map active positions to ActiveTrade[]
+        const mapped: ActiveTrade[] = (data.active_positions || []).map((p: any) => ({
+          id: p.id,
+          asset: p.asset,
+          entryPrice: p.entry_price,
+          currentPrice: p.current_price,
+          pnl: p.pnl,
+          positionSize: p.position_size,
+          openedAt: p.opened_at,
+        }));
+        setActiveTrades(mapped);
+      }
+
+      // Process activity
+      if (activityRes.status === "fulfilled" && activityRes.value.ok) {
+        const data = await activityRes.value.json();
+        const mapped: ActivityItem[] = (data.activity || []).map((a: any) => ({
+          id: a.id,
+          timestamp: a.timestamp,
+          type: a.type === "executed" ? "executed" : a.type === "pending" ? "pending" : "rejected",
+          asset: a.asset,
+          confidence: a.confidence,
+          action: toTradeAction(a.action),
+          pnl: a.pnl,
+          note: a.note,
+        }));
+        setActivity(mapped);
+      }
+
+      // Process pending
+      if (pendingRes.status === "fulfilled" && pendingRes.value.ok) {
+        const data = await pendingRes.value.json();
+        const mapped: PendingDecision[] = (data.pending || []).map((p: any) => ({
+          id: p.id,
+          symbol: p.asset,
+          confidence: p.confidence,
+          suggestedAction: toTradeAction(p.direction),
+          rationale: p.rationale,
+          positionSize: p.position_size,
+          expiresAt: new Date(p.expires_at).getTime(),
+          source: "x" as const,
+        }));
+        setPendingTrades(mapped);
+      }
+
+      // Process trades (for summary records)
+      if (tradesRes.status === "fulfilled" && tradesRes.value.ok) {
+        const data = await tradesRes.value.json();
+        const mapped: SummaryRecord[] = (data.trades || []).map((t: any) => ({
+          agent_id: t.agent_id,
+          symbol: t.asset,
+          source: "system",
+          confidence_score: t.confidence,
+          action: t.status === "closed" ? "execute" : "execute",
+          rationale: "",
+          pnl: t.pnl,
+          executed_at: t.opened_at,
+          position_size: t.position_size,
+        }));
+        setSummaryRecords(mapped);
+      }
+
+      setConnectionStatus("online");
+    } catch (err) {
+      console.warn("[TradingContext] Poll error:", err instanceof Error ? err.message : err);
     }
+  }, [apiUrl]);
 
-    setPendingTrades((prev) => prev.filter((trade) => trade.id !== tradeId));
-  };
+  // ── Start polling ──────────────────────────────────────────────────
+  useEffect(() => {
+    void pingBackend();
+    void pollData();
 
+    pollRef.current = setInterval(() => {
+      void pollData();
+    }, POLL_INTERVAL);
+
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, [apiUrl]);
+
+  // ── Agent update ───────────────────────────────────────────────────
+  const updateAgent = useCallback(async (id: string, patch: Partial<AgentConfig>) => {
+    // Optimistic local update
+    setAgents((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch } : a)));
+
+    // Sync to backend
+    try {
+      const body: any = {};
+      if (patch.assignedCapital !== undefined) body.assigned_capital = patch.assignedCapital;
+      if (patch.confidenceThreshold !== undefined) body.confidence_threshold = patch.confidenceThreshold;
+      if (patch.status !== undefined) body.status = patch.status;
+      if (patch.name !== undefined) body.name = patch.name;
+
+      await fetch(`${apiUrl}/agents/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    } catch {
+      // Silently fail — optimistic update stays
+    }
+  }, [apiUrl]);
+
+  // ── Autonomous mode toggle ─────────────────────────────────────────
+  const setAutonomousMode = useCallback(async (enabled: boolean) => {
+    setAutonomousModeLocal(enabled);
+    try {
+      await fetch(`${apiUrl}/settings/autonomous`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      });
+    } catch {
+      // Silently fail
+    }
+  }, [apiUrl]);
+
+  // ── Risk level ─────────────────────────────────────────────────────
+  const setRiskLevel = useCallback(async (level: RiskLevel) => {
+    setRiskLevelLocal(level);
+    try {
+      await fetch(`${apiUrl}/settings/risk`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ level }),
+      });
+    } catch {
+      // Silently fail
+    }
+  }, [apiUrl]);
+
+  // ── Resolve pending trade ──────────────────────────────────────────
+  const resolvePendingTrade = useCallback(async (tradeId: string, accepted: boolean) => {
+    const action = accepted ? "approve" : "reject";
+    try {
+      const response = await fetch(`${apiUrl}/pending/${tradeId}/${action}`, { method: "POST" });
+      if (!response.ok) throw new Error(`Failed to ${action} trade`);
+      // Remove from local state immediately
+      setPendingTrades((prev) => prev.filter((t) => t.id !== tradeId));
+      // Re-poll to get updated data
+      void pollData();
+    } catch (error) {
+      Alert.alert("Action failed", error instanceof Error ? error.message : "Unknown error");
+    }
+  }, [apiUrl, pollData]);
+
+  // ── Analyze signal (legacy truth workflow) ─────────────────────────
   async function analyzeSignal(draft: SignalDraft) {
     if (mainAgent.status !== "active") {
       Alert.alert("Main agent paused", "Set ORION to live before running signal analysis.");
       return;
     }
 
-    const usedCapital = activeTrades.reduce((sum, trade) => sum + trade.positionSize, 0);
-    if (usedCapital > mainAgent.assignedCapital) {
-      Alert.alert("Allocation exceeded", "Reduce active exposure or increase ORION capital allocation.");
-      return;
-    }
-
     setAnalyzing(true);
     setSystemStatus("analyzing");
     setDailySummary(null);
+
+    const usedCapital = activeTrades.reduce((sum, trade) => sum + trade.positionSize, 0);
 
     const payload = {
       source: draft.source,
@@ -241,77 +406,14 @@ export function TradingProvider({ children }: { children: React.ReactNode }) {
 
       setConnectionStatus("online");
       const result = (await response.json()) as AnalyzeResponse;
-      const timestamp = new Date().toISOString();
-      const action = toTradeAction(result.direction);
 
-      setRecentSignals((prev) => [
-        {
-          id: `signal-${Date.now()}`,
-          asset: result.symbol,
-          confidence: result.confidence_score,
-          action,
-          timestamp,
-          source: result.source === "truth_social" ? "truth_social" : "x",
-        },
-        ...prev,
-      ]);
-
-      const summaryRecord: SummaryRecord = {
-        agent_id: result.agent_id,
-        symbol: result.symbol,
-        source: result.source,
-        confidence_score: result.confidence_score,
-        action: result.action,
-        rationale: result.decision_rationale,
-        pnl: 0,
-        executed_at: timestamp,
-        position_size: result.suggested_position_size,
-      };
-
-      setSummaryRecords((prev) => [summaryRecord, ...prev]);
-
+      setSystemStatus(result.action === "execute" ? "executing" : "idle");
       if (result.action === "execute") {
-        addActiveTrade(summaryRecord, action);
-        setSystemStatus("executing");
         setTimeout(() => setSystemStatus("idle"), 900);
-      } else if (result.action === "request_approval") {
-        setPendingTrades((prev) => [
-          {
-            id: `pending-${Date.now()}`,
-            symbol: result.symbol,
-            confidence: result.confidence_score,
-            suggestedAction: action,
-            rationale: result.decision_rationale,
-            positionSize: result.suggested_position_size,
-            expiresAt: Date.now() + 45_000,
-            source: result.source === "truth_social" ? "truth_social" : "x",
-          },
-          ...prev,
-        ]);
-        addActivity({
-          id: `activity-${Date.now()}`,
-          timestamp,
-          type: "pending",
-          asset: result.symbol,
-          confidence: result.confidence_score,
-          action,
-          pnl: 0,
-          note: "Trade setup sent for user confirmation.",
-        });
-        setSystemStatus("idle");
-      } else {
-        addActivity({
-          id: `activity-${Date.now()}`,
-          timestamp,
-          type: "rejected",
-          asset: result.symbol,
-          confidence: result.confidence_score,
-          action,
-          pnl: 0,
-          note: result.action === "blocked" ? "Trade blocked by allocation guardrail." : "Signal below confidence threshold.",
-        });
-        setSystemStatus("idle");
       }
+
+      // Re-poll to get fresh data
+      setTimeout(() => void pollData(), 500);
     } catch (error) {
       setConnectionStatus("offline");
       Alert.alert("Signal analysis failed", error instanceof Error ? error.message : "Unknown error");
@@ -321,56 +423,42 @@ export function TradingProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // ── Build daily summary ────────────────────────────────────────────
   async function buildDailySummary() {
-    if (!summaryRecords.length) {
-      Alert.alert("No records available", "Run a signal first to generate a daily summary.");
-      return;
-    }
-
     try {
-      const response = await fetch(`${apiUrl}/truth/summary/daily`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          date: new Date().toISOString().slice(0, 10),
-          records: summaryRecords,
-        }),
+      const response = await fetch(`${apiUrl}/summary/daily`, { method: "POST" });
+      if (!response.ok) throw new Error(`Daily summary failed (${response.status})`);
+      const data = await response.json();
+
+      // Map to frontend's expected DailySummaryResponse shape
+      setDailySummary({
+        date: data.date || new Date().toISOString().slice(0, 10),
+        records_analyzed: data.trades_executed || 0,
+        trades_executed: data.trades_executed || 0,
+        approval_requests: 0,
+        no_action_count: 0,
+        blocked_count: 0,
+        average_confidence: data.avg_confidence || 0,
+        total_pnl: data.total_pnl || 0,
+        win_rate: data.win_rate || 0,
+        by_agent: {},
       });
-      if (!response.ok) {
-        const details = await response.text();
-        throw new Error(details || `daily summary failed (${response.status})`);
-      }
-      setDailySummary((await response.json()) as DailySummaryResponse);
     } catch (error) {
       Alert.alert("Summary failed", error instanceof Error ? error.message : "Unknown error");
     }
   }
 
+  // ── Pending trade expiry ───────────────────────────────────────────
   useEffect(() => {
     if (!pendingTrades.length) return;
     const ticker = setInterval(() => {
       const now = Date.now();
-      const expired = pendingTrades.filter((trade) => trade.expiresAt <= now);
-      if (!expired.length) return;
-
-      expired.forEach((trade) => {
-        addActivity({
-          id: `activity-${Date.now()}-${trade.id}`,
-          timestamp: new Date().toISOString(),
-          type: "rejected",
-          asset: trade.symbol,
-          confidence: trade.confidence,
-          action: trade.suggestedAction,
-          pnl: 0,
-          note: "Pending trade expired before user confirmation.",
-        });
-      });
       setPendingTrades((prev) => prev.filter((trade) => trade.expiresAt > now));
-    }, 1000);
-
+    }, 5000);
     return () => clearInterval(ticker);
-  }, [pendingTrades]);
+  }, [pendingTrades.length]);
 
+  // ── Derived state ──────────────────────────────────────────────────
   const filteredActivity = useMemo(() => {
     if (activityFilter === "all") return activity;
     if (activityFilter === "executed") return activity.filter((item) => item.type === "executed");
@@ -379,23 +467,21 @@ export function TradingProvider({ children }: { children: React.ReactNode }) {
   }, [activity, activityFilter]);
 
   const metrics = useMemo<TradingMetrics>(() => {
-    const totalPnl = summaryRecords.reduce((sum, record) => sum + record.pnl, 0);
-    const today = new Date().toISOString().slice(0, 10);
-    const todayPnl = summaryRecords
-      .filter((record) => record.executed_at.startsWith(today))
-      .reduce((sum, record) => sum + record.pnl, 0);
-    const activeCapital = activeTrades.reduce((sum, trade) => sum + trade.positionSize, 0);
-    const restrictedCapital = mainAgent.assignedCapital;
+    if (portfolioState) {
+      return {
+        totalPnl: portfolioState.total_pnl ?? 0,
+        todayPnl: portfolioState.today_pnl ?? 0,
+        activeCapital: portfolioState.total_used ?? 0,
+        restrictedCapital: portfolioState.total_allocated ?? mainAgent.assignedCapital,
+      };
+    }
+    return { totalPnl: 0, todayPnl: 0, activeCapital: 0, restrictedCapital: mainAgent.assignedCapital };
+  }, [portfolioState, mainAgent.assignedCapital]);
 
-    return {
-      totalPnl: Number(totalPnl.toFixed(2)),
-      todayPnl: Number(todayPnl.toFixed(2)),
-      activeCapital: Number(activeCapital.toFixed(2)),
-      restrictedCapital: Number(restrictedCapital.toFixed(2)),
-    };
-  }, [summaryRecords, activeTrades, mainAgent.assignedCapital]);
-
-  const pastTrades = useMemo(() => summaryRecords.filter((record) => record.action === "execute"), [summaryRecords]);
+  const pastTrades = useMemo(
+    () => summaryRecords.filter((record) => record.action === "execute"),
+    [summaryRecords],
+  );
 
   const value: TradingContextValue = {
     apiUrl,
