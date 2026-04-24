@@ -60,6 +60,8 @@ DEFAULT_AGENTS = [
 # ── Scheduler ─────────────────────────────────────────────────────────
 SIGNAL_POLL_INTERVAL_SECONDS: int = 60
 PENDING_EXPIRY_SECONDS: int = 120
+SIGNAL_DEDUP_WINDOW_SECONDS: int = 180
+SIGNAL_DEDUP_CONFIDENCE_DELTA: int = 3
 
 # ── Indicator Weights (must sum to 1.0) ───────────────────────────────
 INDICATOR_WEIGHTS = {

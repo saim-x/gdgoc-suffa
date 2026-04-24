@@ -169,7 +169,7 @@ async def list_signals(
 async def analyze_batch(payload: BatchAnalyzeRequest):
     """Trigger analysis for multiple symbols."""
     try:
-        signals = await generate_signals_batch(payload.symbols, payload.context)
+        signals = await generate_signals_batch(payload.symbols, payload.context, dedupe=False)
         all_actions = []
         for signal in signals:
             actions = await process_signal_for_agents(signal)
@@ -192,7 +192,7 @@ async def analyze_symbol(symbol: str, payload: AnalyzeRequest | None = None):
     """
     try:
         context = payload.context if payload else ""
-        signal = await generate_signal(symbol.strip().upper(), context)
+        signal = await generate_signal(symbol.strip().upper(), context, dedupe=False)
         agent_actions = await process_signal_for_agents(signal)
         return {
             "signal": signal,
@@ -287,9 +287,12 @@ async def close_trade_endpoint(trade_id: str):
 # ── Pending Approvals ─────────────────────────────────────────────────
 
 @app.get("/pending")
-async def list_pending():
+async def list_pending(
+    limit: int = Query(25, ge=1, le=200),
+    agent_id: str | None = Query(None),
+):
     """List pending trade approvals."""
-    pending = await db.get_pending()
+    pending = await db.get_pending(limit=limit, agent_id=agent_id)
     return {"pending": pending, "count": len(pending)}
 
 
@@ -299,6 +302,8 @@ async def approve_trade(pending_id: str):
     result = await approve_pending_trade(pending_id)
     if not result:
         raise HTTPException(status_code=404, detail="Pending trade not found or already resolved")
+    if result.get("action") == "blocked":
+        raise HTTPException(status_code=409, detail=result.get("reason", "Trade blocked"))
     return result
 
 

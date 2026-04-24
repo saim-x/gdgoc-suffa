@@ -139,7 +139,10 @@ export function TradingProvider({ children }: { children: React.ReactNode }) {
   const [trendPeriod, setTrendPeriod] = useState<TrendPeriod>("1D");
   const [portfolioState, setPortfolioState] = useState<any>(null);
 
-  const mainAgent = agents[0] ?? initialMainAgent;
+  const mainAgent = useMemo(
+    () => agents.find((agent) => agent.id === "agent-orion") ?? agents[0] ?? initialMainAgent,
+    [agents]
+  );
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ── Ping backend ───────────────────────────────────────────────────
@@ -177,7 +180,7 @@ export function TradingProvider({ children }: { children: React.ReactNode }) {
         makeFetch("/agents"),
         makeFetch("/portfolio"),
         makeFetch("/activity?limit=100"),
-        makeFetch("/pending"),
+        makeFetch("/pending?limit=40"),
         makeFetch("/trades?limit=50"),
       ]);
 
@@ -251,6 +254,7 @@ export function TradingProvider({ children }: { children: React.ReactNode }) {
         const data = await pendingRes.value.json();
         const mapped: PendingDecision[] = (data.pending || []).map((p: any) => ({
           id: p.id,
+          agentId: p.agent_id,
           symbol: p.asset,
           confidence: p.confidence,
           suggestedAction: toTradeAction(p.direction),
@@ -259,7 +263,14 @@ export function TradingProvider({ children }: { children: React.ReactNode }) {
           expiresAt: new Date(p.expires_at).getTime(),
           source: "x" as const,
         }));
-        setPendingTrades(mapped);
+
+        const deduped = Array.from(new Map(mapped.map((item) => [item.id, item])).values());
+        deduped.sort((a, b) => {
+          const expiryOrder = a.expiresAt - b.expiresAt;
+          if (expiryOrder !== 0) return expiryOrder;
+          return b.confidence - a.confidence;
+        });
+        setPendingTrades(deduped);
       }
 
       // Process trades (for summary records)

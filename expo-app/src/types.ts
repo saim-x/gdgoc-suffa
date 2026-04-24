@@ -96,6 +96,7 @@ export type SignalDraft = {
 
 export type PendingDecision = {
   id: string;
+  agentId: string;
   symbol: string;
   confidence: number;
   suggestedAction: TradeAction;

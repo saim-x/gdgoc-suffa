@@ -2,7 +2,7 @@
   "name": "gdgoc-suffa",
   "private": true,
   "scripts": {
-    "dev:backend": ".\\api\\.venv\\Scripts\\python.exe -m uvicorn main:app --reload --app-dir api",
+    "dev:backend": ".\\api\\.venv\\Scripts\\python.exe -m uvicorn main:app --reload --app-dir api --host 0.0.0.0 --port 8000",
     "dev:frontend": "npm run start --prefix expo-app"
   }
 }

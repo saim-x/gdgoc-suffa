@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
+from config import SIGNAL_DEDUP_CONFIDENCE_DELTA, SIGNAL_DEDUP_WINDOW_SECONDS
 from indicators.sma import run_sma_indicator
 from indicators.rsi import run_rsi_indicator
 from indicators.sentiment import run_sentiment_indicator
@@ -15,7 +17,34 @@ import database as db
 logger = logging.getLogger(__name__)
 
 
-async def generate_signal(asset: str, context: str = "") -> dict:
+def _is_recent_duplicate(previous_signal: dict | None, candidate_signal: dict) -> bool:
+    if not previous_signal:
+        return False
+    if previous_signal.get("asset") != candidate_signal.get("asset"):
+        return False
+    if previous_signal.get("signal") != candidate_signal.get("signal"):
+        return False
+
+    prev_conf = int(previous_signal.get("confidence_score", 0))
+    next_conf = int(candidate_signal.get("confidence_score", 0))
+    if abs(prev_conf - next_conf) > SIGNAL_DEDUP_CONFIDENCE_DELTA:
+        return False
+
+    created_at = previous_signal.get("created_at")
+    if not isinstance(created_at, str):
+        return False
+    try:
+        created_dt = datetime.fromisoformat(created_at)
+    except ValueError:
+        return False
+    if created_dt.tzinfo is None:
+        created_dt = created_dt.replace(tzinfo=timezone.utc)
+
+    age_seconds = (datetime.now(timezone.utc) - created_dt).total_seconds()
+    return age_seconds <= SIGNAL_DEDUP_WINDOW_SECONDS
+
+
+async def generate_signal(asset: str, context: str = "", dedupe: bool = True) -> dict:
     """
     Full signal pipeline for one asset:
     1. Fetch market data
@@ -44,6 +73,20 @@ async def generate_signal(asset: str, context: str = "") -> dict:
     # Step 3: Aggregate
     unified = aggregate_signals([sma_result, rsi_result, sentiment_result])
 
+    # Skip storing duplicate near-identical signals generated too recently.
+    if dedupe:
+        previous = await db.get_latest_signal(unified["asset"])
+        if _is_recent_duplicate(previous, unified):
+            logger.info(
+                "Skipping duplicate signal for %s (%s @ %d%% already generated recently)",
+                unified["asset"],
+                unified["signal"],
+                unified["confidence_score"],
+            )
+            duplicate = dict(previous)
+            duplicate["is_duplicate"] = True
+            return duplicate
+
     # Step 4: Persist
     stored = await db.insert_signal(
         asset=unified["asset"],
@@ -56,6 +99,7 @@ async def generate_signal(asset: str, context: str = "") -> dict:
     # Merge DB id into result
     unified["id"] = stored["id"]
     unified["created_at"] = stored["created_at"]
+    unified["is_duplicate"] = False
 
     logger.info(
         "Signal generated for %s: %s @ %d%% confidence",
@@ -65,12 +109,12 @@ async def generate_signal(asset: str, context: str = "") -> dict:
     return unified
 
 
-async def generate_signals_batch(assets: list[str], context: str = "") -> list[dict]:
+async def generate_signals_batch(assets: list[str], context: str = "", dedupe: bool = True) -> list[dict]:
     """Run signal generation for multiple assets."""
     results = []
     for asset in assets:
         try:
-            result = await generate_signal(asset, context)
+            result = await generate_signal(asset, context, dedupe=dedupe)
             results.append(result)
         except Exception as exc:
             logger.error("Signal generation failed for %s: %s", asset, exc)

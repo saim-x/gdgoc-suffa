@@ -36,6 +36,8 @@ async def _signal_loop() -> None:
                     break
                 try:
                     signal = await generate_signal(symbol)
+                    if signal.get("is_duplicate"):
+                        continue
                     # Feed to agents
                     await process_signal_for_agents(signal)
                 except Exception as exc:

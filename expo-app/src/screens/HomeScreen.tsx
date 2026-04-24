@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useMemo } from "react";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useTrading } from "../context/TradingContext";
 import { colorForPnl, colors, radius, spacing } from "../theme";
@@ -7,14 +7,6 @@ import { GlassCard } from "../components/GlassCard";
 import { MetricBox } from "../components/MetricBox";
 import { SignalCard } from "../components/SignalCard";
 import { StatusStrip } from "../components/StatusStrip";
-import type { SignalDraft } from "../types";
-
-const defaultDraft: SignalDraft = {
-  source: "x",
-  author: "Donald Trump",
-  symbol: "TSLA",
-  content: "New tariff policy announced for EV battery imports.",
-};
 
 export function HomeScreen() {
   const {
@@ -22,19 +14,17 @@ export function HomeScreen() {
     updateAgent,
     connectionStatus,
     systemStatus,
-    analyzeSignal,
-    analyzing,
     metrics,
     pendingTrades,
     resolvePendingTrade,
     recentSignals,
     activeTrades,
+    activity,
     pastTrades,
     buildDailySummary,
     dailySummary,
   } = useTrading();
 
-  const [draft, setDraft] = useState<SignalDraft>(defaultDraft);
   const statusColor = connectionStatus === "online" ? colors.profit : colors.loss;
   const statusLabel = connectionStatus === "online" ? "API live" : "API offline";
 
@@ -44,6 +34,21 @@ export function HomeScreen() {
     () => activeTrades.reduce((sum, trade) => sum + trade.positionSize, 0),
     [activeTrades]
   );
+  const mainAgentPendingTrades = useMemo(
+    () =>
+      pendingTrades
+        .filter((trade) => trade.agentId === mainAgent.id)
+        .sort((a, b) => {
+          const expiryOrder = a.expiresAt - b.expiresAt;
+          if (expiryOrder !== 0) return expiryOrder;
+          return b.confidence - a.confidence;
+        }),
+    [pendingTrades, mainAgent.id]
+  );
+  const visiblePendingTrades = mainAgentPendingTrades.slice(0, 6);
+  const actionableSignals = useMemo(() => recentSignals.filter((signal) => signal.action !== "hold"), [recentSignals]);
+  const recentActivity = useMemo(() => activity.slice(0, 6), [activity]);
+  const latestSignalTimestamp = actionableSignals[0]?.timestamp ?? recentSignals[0]?.timestamp ?? null;
 
   return (
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -53,8 +58,8 @@ export function HomeScreen() {
             <Text style={styles.mascotText}>ORION</Text>
           </LinearGradient>
           <View style={{ flex: 1 }}>
-            <Text style={styles.title}>Main Agent Console</Text>
-            <Text style={styles.subtitle}>Limits-first autonomous trading with human approvals in the loop.</Text>
+            <Text style={styles.title}>ORION Autonomous Console</Text>
+            <Text style={styles.subtitle}>Live signal parsing, adaptive execution, and guardrail-protected approvals.</Text>
           </View>
         </View>
 
@@ -91,30 +96,32 @@ export function HomeScreen() {
 
       <GlassCard innerStyle={styles.sectionCard}>
         <View style={styles.sectionHead}>
-          <Text style={styles.sectionTitle}>Main Agent Setup</Text>
-          <Text style={styles.sectionMeta}>Live workflow controls</Text>
+          <Text style={styles.sectionTitle}>Autonomy Controls</Text>
+          <Text style={styles.sectionMeta}>Risk & capital boundaries</Text>
         </View>
-        <View style={styles.inlineInputs}>
-          <InputBox
-            label="Agent Limit"
-            value={String(mainAgent.assignedCapital)}
-            onChangeText={(value) => {
-              const parsed = Number(value);
-              if (Number.isFinite(parsed) && parsed > 0) {
-                updateAgent(mainAgent.id, { assignedCapital: parsed });
-              }
-            }}
-          />
-          <InputBox
-            label="Threshold %"
-            value={String(mainAgent.confidenceThreshold)}
-            onChangeText={(value) => {
-              const parsed = Number(value);
-              if (Number.isFinite(parsed)) {
-                updateAgent(mainAgent.id, { confidenceThreshold: Math.max(60, Math.min(95, parsed)) });
-              }
-            }}
-          />
+        <Text style={styles.runtimeDescription}>
+          ORION is continuously scanning the watchlist, scoring confidence, opening positions, and requesting your approval when
+          confidence is mid-band.
+        </Text>
+        <View style={styles.heartbeatGrid}>
+          <View style={styles.heartbeatCell}>
+            <Text style={styles.heartbeatLabel}>Last signal</Text>
+            <Text style={styles.heartbeatValue}>
+              {latestSignalTimestamp ? new Date(latestSignalTimestamp).toLocaleTimeString() : "Waiting"}
+            </Text>
+          </View>
+          <View style={styles.heartbeatCell}>
+            <Text style={styles.heartbeatLabel}>Actionable signals</Text>
+            <Text style={styles.heartbeatValue}>{actionableSignals.length}</Text>
+          </View>
+          <View style={styles.heartbeatCell}>
+            <Text style={styles.heartbeatLabel}>Open positions</Text>
+            <Text style={styles.heartbeatValue}>{activeTrades.length}</Text>
+          </View>
+          <View style={styles.heartbeatCell}>
+            <Text style={styles.heartbeatLabel}>Awaiting approvals</Text>
+            <Text style={styles.heartbeatValue}>{mainAgentPendingTrades.length}</Text>
+          </View>
         </View>
         <View style={styles.rowButtons}>
           <ActionButton
@@ -122,44 +129,57 @@ export function HomeScreen() {
             onPress={() => updateAgent(mainAgent.id, { status: mainAgent.status === "active" ? "paused" : "active" })}
             secondary
           />
+          <ActionButton label="Generate Daily Brief" onPress={buildDailySummary} />
         </View>
       </GlassCard>
 
       <GlassCard innerStyle={styles.sectionCard}>
-        <View style={styles.sectionHead}>
-          <Text style={styles.sectionTitle}>Signal Input</Text>
-          <Text style={styles.sectionMeta}>POST /truth/analyze</Text>
-        </View>
-        <View style={styles.sourceRow}>
-          <SourceChip active={draft.source === "x"} label="X" onPress={() => setDraft((prev) => ({ ...prev, source: "x" }))} />
-          <SourceChip
-            active={draft.source === "truth_social"}
-            label="Truth Social"
-            onPress={() => setDraft((prev) => ({ ...prev, source: "truth_social" }))}
-          />
-        </View>
-        <InputBox label="Author" value={draft.author} onChangeText={(author) => setDraft((prev) => ({ ...prev, author }))} />
-        <InputBox
-          label="Asset"
-          value={draft.symbol}
-          onChangeText={(symbol) => setDraft((prev) => ({ ...prev, symbol: symbol.toUpperCase() }))}
-        />
-        <InputBox
-          label="Announcement"
-          value={draft.content}
-          multiline
-          onChangeText={(content) => setDraft((prev) => ({ ...prev, content }))}
-        />
-        <View style={styles.rowButtons}>
-          <ActionButton label={analyzing ? "Analyzing..." : "Run Analysis"} onPress={() => analyzeSignal(draft)} />
-          <ActionButton label="Daily Summary" onPress={buildDailySummary} secondary />
-        </View>
+        <Text style={styles.sectionTitle}>Autonomous Activity Feed</Text>
+        {recentActivity.length ? (
+          recentActivity.map((item) => (
+            <View key={item.id} style={styles.feedRow}>
+              <View
+                style={[
+                  styles.feedBadge,
+                  item.type === "executed"
+                    ? styles.feedBadgeExecuted
+                    : item.type === "pending"
+                      ? styles.feedBadgePending
+                      : styles.feedBadgeRejected,
+                ]}
+              >
+                <Text style={styles.feedBadgeText}>{item.type.toUpperCase()}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.feedTitle}>
+                  {item.asset} · {item.action.toUpperCase()} · {item.confidence}%
+                </Text>
+                <Text style={styles.feedMeta}>
+                  {new Date(item.timestamp).toLocaleTimeString()} · {item.note}
+                </Text>
+              </View>
+            </View>
+          ))
+        ) : (
+          <Text style={styles.empty}>No activity yet. ORION is warming up.</Text>
+        )}
+      </GlassCard>
+
+      <GlassCard innerStyle={styles.sectionCardNoRight}>
+        <Text style={styles.sectionTitle}>Signal Radar</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: spacing.sm }}>
+          {actionableSignals.length ? (
+            actionableSignals.map((signal) => <SignalCard key={signal.id} signal={signal} />)
+          ) : (
+            <Text style={styles.empty}>No actionable signals yet.</Text>
+          )}
+        </ScrollView>
       </GlassCard>
 
       <GlassCard innerStyle={styles.sectionCard}>
-        <Text style={styles.sectionTitle}>Pending Trade Confirmations</Text>
-        {pendingTrades.length ? (
-          pendingTrades.map((trade) => (
+        <Text style={styles.sectionTitle}>Pending Trade Confirmations · ORION</Text>
+        {visiblePendingTrades.length ? (
+          visiblePendingTrades.map((trade) => (
             <View key={trade.id} style={styles.pendingRow}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.pendingAsset}>
@@ -176,17 +196,11 @@ export function HomeScreen() {
         ) : (
           <Text style={styles.empty}>No pending confirmations.</Text>
         )}
-      </GlassCard>
-
-      <GlassCard innerStyle={styles.sectionCardNoRight}>
-        <Text style={styles.sectionTitle}>Recent Signals</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: spacing.sm }}>
-          {recentSignals.length ? (
-            recentSignals.map((signal) => <SignalCard key={signal.id} signal={signal} />)
-          ) : (
-            <Text style={styles.empty}>No signal responses yet.</Text>
-          )}
-        </ScrollView>
+        {mainAgentPendingTrades.length > visiblePendingTrades.length ? (
+          <Text style={styles.sectionMeta}>
+            Showing {visiblePendingTrades.length} of {mainAgentPendingTrades.length} pending approvals.
+          </Text>
+        ) : null}
       </GlassCard>
 
       <GlassCard innerStyle={styles.sectionCard}>
@@ -218,39 +232,6 @@ export function HomeScreen() {
         </GlassCard>
       ) : null}
     </ScrollView>
-  );
-}
-
-function InputBox({
-  label,
-  value,
-  onChangeText,
-  multiline,
-}: {
-  label: string;
-  value: string;
-  onChangeText: (value: string) => void;
-  multiline?: boolean;
-}) {
-  return (
-    <View style={styles.inputWrap}>
-      <Text style={styles.inputLabel}>{label}</Text>
-      <TextInput
-        value={value}
-        onChangeText={onChangeText}
-        style={[styles.input, multiline && styles.inputMultiline]}
-        placeholderTextColor={colors.textSoft}
-        multiline={multiline}
-      />
-    </View>
-  );
-}
-
-function SourceChip({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) {
-  return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.sourceChip, active && styles.sourceActive, pressed && styles.pressed]}>
-      <Text style={[styles.sourceText, active && styles.sourceTextActive]}>{label}</Text>
-    </Pressable>
   );
 }
 
@@ -374,6 +355,76 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 11,
     fontFamily: "Inter_500Medium",
+  },
+  runtimeDescription: {
+    color: colors.textMuted,
+    fontFamily: "Inter_500Medium",
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  heartbeatGrid: {
+    marginTop: spacing.xs,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+  },
+  heartbeatCell: {
+    minWidth: 132,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: "#FBFEFC",
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    gap: 4,
+  },
+  heartbeatLabel: {
+    color: colors.textSoft,
+    fontFamily: "Inter_500Medium",
+    fontSize: 11,
+  },
+  heartbeatValue: {
+    color: colors.text,
+    fontFamily: "Inter_700Bold",
+    fontSize: 15,
+  },
+  feedRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    alignItems: "flex-start",
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    paddingVertical: spacing.sm,
+  },
+  feedBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+  },
+  feedBadgeExecuted: {
+    backgroundColor: "#E8F7EF",
+  },
+  feedBadgePending: {
+    backgroundColor: "#FFF7E2",
+  },
+  feedBadgeRejected: {
+    backgroundColor: "#FDECEC",
+  },
+  feedBadgeText: {
+    fontSize: 10,
+    fontFamily: "Inter_700Bold",
+    color: colors.text,
+  },
+  feedTitle: {
+    color: colors.text,
+    fontFamily: "Inter_700Bold",
+    fontSize: 12,
+  },
+  feedMeta: {
+    marginTop: 2,
+    color: colors.textMuted,
+    fontFamily: "Inter_500Medium",
+    fontSize: 11,
   },
   inlineInputs: {
     flexDirection: "row",

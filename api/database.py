@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any
 
 import aiosqlite
@@ -295,18 +295,66 @@ async def get_signals(limit: int = 50, asset: str | None = None) -> list[dict[st
         await db.close()
 
 
+async def get_latest_signal(asset: str) -> dict[str, Any] | None:
+    db = await get_db()
+    try:
+        rows = await db.execute_fetchall(
+            "SELECT * FROM signals WHERE asset = ? ORDER BY created_at DESC LIMIT 1",
+            (asset.upper(),),
+        )
+        if not rows:
+            return None
+        signal = dict(rows[0])
+        signal["indicator_breakdown"] = json.loads(signal.get("indicator_breakdown", "{}"))
+        return signal
+    finally:
+        await db.close()
+
+
 # ── Trades CRUD ───────────────────────────────────────────────────────
 
 async def insert_trade(
     agent_id: str, asset: str, direction: str, entry_price: float,
     position_size: float, fee: float, slippage: float,
     confidence: int = 0, signal_id: str | None = None,
-) -> dict[str, Any]:
+) -> dict[str, Any] | None:
     trade_id = f"trd-{_uuid()}"
     now = _now()
     async with _write_lock:
         db = await get_db()
         try:
+            # Hard guard: never allow trade execution beyond agent/portfolio capital.
+            agent_rows = await db.execute_fetchall(
+                "SELECT assigned_capital, used_capital FROM agents WHERE id = ?",
+                (agent_id,),
+            )
+            if not agent_rows:
+                logger.warning("Trade blocked for missing agent %s", agent_id)
+                return None
+
+            portfolio_rows = await db.execute_fetchall(
+                "SELECT available_capital FROM portfolio WHERE id = 'main'",
+            )
+            if not portfolio_rows:
+                logger.warning("Trade blocked: portfolio state missing")
+                return None
+
+            assigned_capital = float(agent_rows[0]["assigned_capital"])
+            used_capital = float(agent_rows[0]["used_capital"])
+            available_agent = assigned_capital - used_capital
+            available_portfolio = float(portfolio_rows[0]["available_capital"])
+
+            if (
+                position_size <= 0
+                or (position_size - available_agent) > 1e-9
+                or (position_size - available_portfolio) > 1e-9
+            ):
+                logger.info(
+                    "Trade blocked by capital guard (agent=%s, size=%.2f, agent_available=%.2f, portfolio_available=%.2f)",
+                    agent_id, position_size, available_agent, available_portfolio,
+                )
+                return None
+
             await db.execute(
                 """INSERT INTO trades (id, agent_id, asset, direction, entry_price, position_size, fee, slippage, confidence, signal_id, opened_at, status)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open')""",
@@ -407,35 +455,87 @@ async def insert_pending(
 ) -> dict[str, Any]:
     pending_id = f"pnd-{_uuid()}"
     now = datetime.now(timezone.utc)
-    expires = (now + __import__("datetime").timedelta(seconds=expires_seconds)).isoformat()
+    expires = (now + timedelta(seconds=expires_seconds)).isoformat()
     now_str = now.isoformat()
+    async with _write_lock:
+        db = await get_db()
+        try:
+            existing_rows = await db.execute_fetchall(
+                """SELECT * FROM pending_approvals
+                   WHERE agent_id = ? AND asset = ? AND direction = ? AND status = 'pending'
+                   ORDER BY created_at DESC LIMIT 1""",
+                (agent_id, asset, direction),
+            )
+
+            if existing_rows:
+                existing = dict(existing_rows[0])
+                await db.execute(
+                    """UPDATE pending_approvals
+                       SET confidence = ?, position_size = ?, rationale = ?, signal_id = ?,
+                           created_at = ?, expires_at = ?, resolved_at = NULL
+                       WHERE id = ?""",
+                    (confidence, position_size, rationale, signal_id, now_str, expires, existing["id"]),
+                )
+                await db.commit()
+                existing.update(
+                    confidence=confidence,
+                    position_size=position_size,
+                    rationale=rationale,
+                    signal_id=signal_id,
+                    status="pending",
+                    created_at=now_str,
+                    expires_at=expires,
+                    resolved_at=None,
+                    deduplicated=True,
+                )
+                return existing
+
+            await db.execute(
+                """INSERT INTO pending_approvals (id, agent_id, asset, direction, confidence, position_size, rationale, signal_id, status, created_at, expires_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)""",
+                (pending_id, agent_id, asset, direction, confidence, position_size, rationale, signal_id, now_str, expires),
+            )
+            await db.commit()
+            return {
+                "id": pending_id, "agent_id": agent_id, "asset": asset,
+                "direction": direction, "confidence": confidence,
+                "position_size": position_size, "rationale": rationale,
+                "signal_id": signal_id, "status": "pending",
+                "created_at": now_str, "expires_at": expires,
+                "deduplicated": False,
+            }
+        finally:
+            await db.close()
+
+
+async def get_pending(status: str = "pending", limit: int | None = None, agent_id: str | None = None) -> list[dict[str, Any]]:
     db = await get_db()
     try:
-        await db.execute(
-            """INSERT INTO pending_approvals (id, agent_id, asset, direction, confidence, position_size, rationale, signal_id, status, created_at, expires_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)""",
-            (pending_id, agent_id, asset, direction, confidence, position_size, rationale, signal_id, now_str, expires),
-        )
-        await db.commit()
-        return {
-            "id": pending_id, "agent_id": agent_id, "asset": asset,
-            "direction": direction, "confidence": confidence,
-            "position_size": position_size, "rationale": rationale,
-            "signal_id": signal_id, "status": "pending",
-            "created_at": now_str, "expires_at": expires,
-        }
+        conditions = ["status = ?"]
+        params: list[Any] = [status]
+        if agent_id:
+            conditions.append("agent_id = ?")
+            params.append(agent_id)
+
+        query = f"SELECT * FROM pending_approvals WHERE {' AND '.join(conditions)} ORDER BY created_at DESC"
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(limit)
+
+        rows = await db.execute_fetchall(query, tuple(params))
+        return _rows_to_list(rows)
     finally:
         await db.close()
 
 
-async def get_pending(status: str = "pending") -> list[dict[str, Any]]:
+async def get_pending_by_id(pending_id: str, status: str = "pending") -> dict[str, Any] | None:
     db = await get_db()
     try:
         rows = await db.execute_fetchall(
-            "SELECT * FROM pending_approvals WHERE status = ? ORDER BY created_at DESC",
-            (status,),
+            "SELECT * FROM pending_approvals WHERE id = ? AND status = ?",
+            (pending_id, status),
         )
-        return _rows_to_list(rows)
+        return _row_to_dict(rows[0]) if rows else None
     finally:
         await db.close()
 

@@ -113,15 +113,16 @@ async def _agent_decide(agent: dict, signal: dict, autonomous: bool) -> dict:
             signal_id=signal.get("id"),
             expires_seconds=PENDING_EXPIRY_SECONDS,
         )
-        await db.insert_activity(
-            type_="pending",
-            asset=asset,
-            confidence=confidence,
-            action=direction,
-            pnl=0,
-            note=f"Agent {agent['name']}: Trade pending approval ({confidence}% confidence).",
-            agent_id=agent["id"],
-        )
+        if not pending.get("deduplicated"):
+            await db.insert_activity(
+                type_="pending",
+                asset=asset,
+                confidence=confidence,
+                action=direction,
+                pnl=0,
+                note=f"Agent {agent['name']}: Trade pending approval ({confidence}% confidence).",
+                agent_id=agent["id"],
+            )
         return {
             "agent_id": agent["id"],
             "action": "request_approval",
@@ -129,7 +130,7 @@ async def _agent_decide(agent: dict, signal: dict, autonomous: bool) -> dict:
             "confidence": confidence,
             "asset": asset,
             "position_size": position_size,
-            "reason": "Awaiting user approval",
+            "reason": "Awaiting user approval" if not pending.get("deduplicated") else "Updated existing pending approval",
         }
 
     return {"agent_id": agent["id"], "action": "no_action", "asset": asset}
@@ -164,6 +165,24 @@ async def _execute_trade(agent: dict, signal: dict, position_size: float) -> dic
         confidence=signal["confidence_score"],
         signal_id=signal.get("id"),
     )
+    if not trade:
+        await db.insert_activity(
+            type_="rejected",
+            asset=asset,
+            confidence=signal["confidence_score"],
+            action=direction,
+            pnl=0,
+            note=f"Agent {agent['name']}: Trade blocked by capital guard.",
+            agent_id=agent["id"],
+        )
+        return {
+            "agent_id": agent["id"],
+            "action": "blocked",
+            "confidence": signal["confidence_score"],
+            "asset": asset,
+            "direction": direction,
+            "reason": "Capital limit exceeded",
+        }
 
     await db.insert_activity(
         type_="executed",
@@ -195,23 +214,49 @@ async def _execute_trade(agent: dict, signal: dict, position_size: float) -> dic
 
 async def approve_pending_trade(pending_id: str) -> dict | None:
     """Approve a pending trade — execute it."""
-    resolved = await db.resolve_pending(pending_id, approved=True)
-    if not resolved:
+    pending = await db.get_pending_by_id(pending_id, status="pending")
+    if not pending:
         return None
 
-    agent = await db.get_agent(resolved["agent_id"])
+    agent = await db.get_agent(pending["agent_id"])
     if not agent:
         return None
 
+    available = float(agent["assigned_capital"]) - float(agent["used_capital"])
+    if (float(pending["position_size"]) - available) > 1e-9:
+        await db.insert_activity(
+            type_="rejected",
+            asset=pending["asset"],
+            confidence=pending["confidence"],
+            action=pending["direction"],
+            pnl=0,
+            note=f"Approval blocked for {agent['name']}: capital limit exceeded.",
+            agent_id=agent["id"],
+        )
+        return {
+            "pending_id": pending_id,
+            "agent_id": agent["id"],
+            "action": "blocked",
+            "reason": "Agent capital limit exceeded",
+        }
+
     signal = {
-        "asset": resolved["asset"],
-        "signal": resolved["direction"],
-        "confidence_score": resolved["confidence"],
-        "reasoning": resolved.get("rationale", ""),
-        "id": resolved.get("signal_id"),
+        "asset": pending["asset"],
+        "signal": pending["direction"],
+        "confidence_score": pending["confidence"],
+        "reasoning": pending.get("rationale", ""),
+        "id": pending.get("signal_id"),
     }
 
-    return await _execute_trade(agent, signal, resolved["position_size"])
+    executed = await _execute_trade(agent, signal, pending["position_size"])
+    if executed.get("action") != "execute":
+        return executed
+
+    resolved = await db.resolve_pending(pending_id, approved=True)
+    if not resolved:
+        logger.warning("Pending %s executed but could not be marked approved", pending_id)
+
+    return executed
 
 
 async def reject_pending_trade(pending_id: str) -> dict | None:
