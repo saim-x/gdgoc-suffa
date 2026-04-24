@@ -22,7 +22,7 @@ export function SignalCard({ signal, onPress }: SignalCardProps) {
         </View>
         <View style={styles.barTrack}>
           <LinearGradient
-            colors={["#FCD34D", "#F59E0B", "#D97706"]}
+            colors={["#9BE7BF", "#5CCF9D", "#20A86F"]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={[styles.barFill, { width: `${confidence}%` }]}
@@ -45,9 +45,15 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     marginRight: spacing.md,
     borderWidth: 1,
-    borderColor: colors.borderStrong,
-    backgroundColor: "#FDFBF7",
+    borderColor: "rgba(204, 220, 206, 0.4)",
+    backgroundColor: "#FFFFFF",
     padding: 1.5,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 2,
+    marginBottom: 8,
   },
   card: {
     borderRadius: radius.lg - 2,
@@ -74,7 +80,7 @@ const styles = StyleSheet.create({
     width: "100%",
     height: 7,
     borderRadius: radius.pill,
-    backgroundColor: "#EEE8DB",
+    backgroundColor: "#E5EFE8",
     overflow: "hidden",
   },
   barFill: {

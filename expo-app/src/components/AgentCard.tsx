@@ -24,7 +24,7 @@ export function AgentCard({ agent, onToggle, onCapitalChange, onThresholdChange 
         <Switch
           value={agent.status === "active"}
           onValueChange={onToggle}
-          trackColor={{ false: "#D5CEBF", true: "#F59E0B" }}
+          trackColor={{ false: "#C8D8CD", true: "#20A86F" }}
           thumbColor="#FFFFFF"
         />
       </View>
@@ -46,8 +46,8 @@ export function AgentCard({ agent, onToggle, onCapitalChange, onThresholdChange 
           maximumValue={120000}
           step={1000}
           minimumTrackTintColor={colors.aiBlue}
-          maximumTrackTintColor="#E7E1D4"
-          thumbTintColor="#D97706"
+          maximumTrackTintColor="#DCE9E1"
+          thumbTintColor="#20A86F"
         />
       </View>
 
@@ -60,8 +60,8 @@ export function AgentCard({ agent, onToggle, onCapitalChange, onThresholdChange 
           maximumValue={95}
           step={1}
           minimumTrackTintColor={colors.aiPurple}
-          maximumTrackTintColor="#E7E1D4"
-          thumbTintColor="#F59E0B"
+          maximumTrackTintColor="#DCE9E1"
+          thumbTintColor="#20A86F"
         />
       </View>
 
@@ -125,7 +125,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     borderWidth: 1,
     borderColor: colors.borderStrong,
-    backgroundColor: "#FEF7ED",
+    backgroundColor: "#EAF8F1",
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },

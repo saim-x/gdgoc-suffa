@@ -63,7 +63,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: "#FCFBF8",
+    backgroundColor: "#F8FCFA",
     padding: spacing.md,
     gap: spacing.sm,
   },
@@ -76,7 +76,7 @@ const styles = StyleSheet.create({
   bar: {
     flex: 1,
     borderRadius: radius.pill,
-    backgroundColor: "#D97706",
+    backgroundColor: "#20A86F",
   },
   metaRow: {
     flexDirection: "row",

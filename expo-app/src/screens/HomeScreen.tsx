@@ -49,7 +49,7 @@ export function HomeScreen() {
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <GlassCard innerStyle={styles.heroCard}>
         <View style={styles.heroTop}>
-          <LinearGradient colors={["#FCD34D", "#F59E0B"]} style={styles.mascotOrb}>
+          <LinearGradient colors={["#5CCF9D", "#20A86F"]} style={styles.mascotOrb}>
             <Text style={styles.mascotText}>ORION</Text>
           </LinearGradient>
           <View style={{ flex: 1 }}>
@@ -283,7 +283,7 @@ function ActionButton({
 const styles = StyleSheet.create({
   content: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xl,
+    paddingTop: spacing.xxl + spacing.sm,
     paddingBottom: 130,
     gap: spacing.lg,
   },
@@ -304,7 +304,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   mascotText: {
-    color: "#522503",
+    color: "#0D3A27",
     fontFamily: "Inter_700Bold",
     fontSize: 12,
   },
@@ -333,7 +333,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     paddingHorizontal: spacing.sm,
     paddingVertical: 6,
-    backgroundColor: "#FFFCF6",
+    backgroundColor: "#F6FCF8",
   },
   dot: {
     width: 8,
@@ -391,7 +391,7 @@ const styles = StyleSheet.create({
   input: {
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: "#FFFEFC",
+    backgroundColor: "#FFFFFF",
     borderRadius: radius.md,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
@@ -414,11 +414,11 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     paddingVertical: 10,
     alignItems: "center",
-    backgroundColor: "#FFFEFC",
+    backgroundColor: "#FFFFFF",
   },
   sourceActive: {
-    borderColor: "#F59E0B",
-    backgroundColor: "#FFF4DE",
+    borderColor: "#20A86F",
+    backgroundColor: "#EAF8F1",
   },
   sourceText: {
     color: colors.textMuted,
@@ -426,7 +426,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   sourceTextActive: {
-    color: "#8A4B0B",
+    color: "#0D6A45",
   },
   rowButtons: {
     flexDirection: "row",
@@ -436,17 +436,17 @@ const styles = StyleSheet.create({
   button: {
     borderRadius: radius.pill,
     borderWidth: 1,
-    borderColor: "#E7B25D",
-    backgroundColor: "#F59E0B",
+    borderColor: "#1A8F5E",
+    backgroundColor: "#20A86F",
     paddingHorizontal: spacing.md,
     paddingVertical: 10,
   },
   buttonSecondary: {
     borderColor: colors.borderStrong,
-    backgroundColor: "#FFF8EC",
+    backgroundColor: "#F2FAF6",
   },
   buttonText: {
-    color: "#4A2500",
+    color: "#FFFFFF",
     fontFamily: "Inter_600SemiBold",
     fontSize: 12,
   },

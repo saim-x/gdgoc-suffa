@@ -20,13 +20,18 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg + 2,
     padding: 1.5,
     borderWidth: 1,
-    borderColor: colors.borderStrong,
-    backgroundColor: "#FDFBF7",
+    borderColor: "rgba(204, 220, 206, 0.4)", // Softer border
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
+    elevation: 2,
   },
   inner: {
     borderRadius: radius.lg,
-    backgroundColor: colors.panel,
+    backgroundColor: "rgba(255, 255, 255, 0.8)", // Glassy look
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: "rgba(255, 255, 255, 0.5)",
   },
 });

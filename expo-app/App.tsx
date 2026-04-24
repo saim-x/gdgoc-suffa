@@ -22,7 +22,7 @@ export default function App() {
     return (
       <View style={styles.loader}>
         <StatusBar style="dark" />
-        <ActivityIndicator size="large" color="#D97706" />
+        <ActivityIndicator size="large" color="#20A86F" />
       </View>
     );
   }
@@ -33,7 +33,7 @@ export default function App() {
 const styles = StyleSheet.create({
   loader: {
     flex: 1,
-    backgroundColor: "#F7F5F0",
+    backgroundColor: "#F6FAF7",
     justifyContent: "center",
     alignItems: "center",
   },

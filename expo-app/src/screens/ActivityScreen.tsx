@@ -67,7 +67,7 @@ export function ActivityScreen() {
 const styles = StyleSheet.create({
   content: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xl,
+    paddingTop: spacing.xxl,
     paddingBottom: 120,
     gap: spacing.md,
   },
@@ -96,8 +96,8 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   filterChipActive: {
-    borderColor: "#E7B25D",
-    backgroundColor: "#FFF4DE",
+    borderColor: "#20A86F",
+    backgroundColor: "#EAF8F1",
   },
   filterText: {
     color: colors.textMuted,
