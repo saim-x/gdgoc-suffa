@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Multi-Agent Orchestration Demo</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --surface2: #242836;
+    --border: #2d3148; --text: #e4e6f0; --text-dim: #8b8fa3;
+    --accent: #6c63ff; --accent-glow: rgba(108,99,255,0.3);
+    --green: #22c55e; --red: #ef4444; --yellow: #eab308; --blue: #3b82f6;
+    --radius: 12px; --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  }
+  body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  /* Header */
+  .header { padding: 24px 32px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 16px; }
+  .header h1 { font-size: 20px; font-weight: 600; }
+  .header .badge { background: var(--accent); color: #fff; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; letter-spacing: 0.5px; }
+
+  /* Layout */
+  .container { max-width: 1200px; margin: 0 auto; padding: 32px; }
+
+  /* Controls */
+  .controls { display: flex; gap: 12px; align-items: center; margin-bottom: 32px; flex-wrap: wrap; }
+  .controls input { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 10px 16px; border-radius: 8px; font-size: 14px; width: 120px; outline: none; }
+  .controls input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+  .btn { padding: 10px 24px; border-radius: 8px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: #5a52e0; transform: translateY(-1px); box-shadow: 0 4px 16px var(--accent-glow); }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+  .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text-dim); }
+  .btn-outline:hover { border-color: var(--accent); color: var(--text); }
+
+  /* Pipeline Viz */
+  .pipeline { display: flex; align-items: center; gap: 0; margin-bottom: 32px; justify-content: center; flex-wrap: wrap; }
+  .agent-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; width: 200px; text-align: center; transition: all 0.4s ease; position: relative; }
+  .agent-card.active { border-color: var(--accent); box-shadow: 0 0 24px var(--accent-glow); }
+  .agent-card.done { border-color: var(--green); }
+  .agent-card .agent-name { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 8px; }
+  .agent-card .agent-signal { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+  .agent-card .agent-conf { font-size: 13px; color: var(--text-dim); }
+  .agent-card .agent-phase { font-size: 11px; color: var(--accent); margin-top: 8px; font-weight: 500; }
+  .arrow { color: var(--text-dim); font-size: 24px; padding: 0 8px; transition: color 0.3s; }
+  .arrow.active { color: var(--accent); }
+
+  .signal-bullish { color: var(--green); }
+  .signal-bearish { color: var(--red); }
+  .signal-neutral { color: var(--yellow); }
+  .signal-pending { color: var(--text-dim); }
+
+  /* Result Panel */
+  .result-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 32px; }
+  @media (max-width: 768px) { .result-panel { grid-template-columns: 1fr; } }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; }
+  .panel h3 { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 16px; }
+  .recommendation { text-align: center; padding: 32px; }
+  .rec-signal { font-size: 36px; font-weight: 800; margin-bottom: 8px; }
+  .rec-score { font-size: 16px; color: var(--text-dim); margin-bottom: 4px; }
+  .rec-text { font-size: 14px; color: var(--text-dim); line-height: 1.6; margin-top: 16px; max-width: 500px; margin-left: auto; margin-right: auto; }
+
+  /* Handoff Log */
+  .handoff-log { list-style: none; }
+  .handoff-entry { padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .handoff-entry:last-child { border-bottom: none; }
+  .handoff-route { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+  .handoff-meta { font-size: 12px; color: var(--text-dim); }
+  .handoff-ctx { font-size: 12px; color: var(--accent); margin-top: 4px; }
+
+  /* Custom Signals Panel */
+  .custom-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; margin-bottom: 32px; display: none; }
+  .custom-panel.visible { display: block; }
+  .custom-panel h3 { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 16px; }
+  .custom-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 16px; }
+  @media (max-width: 768px) { .custom-grid { grid-template-columns: 1fr; } }
+  .custom-agent { background: var(--surface2); border-radius: 8px; padding: 16px; }
+  .custom-agent label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 6px; font-weight: 500; }
+  .custom-agent select, .custom-agent input[type=range] { width: 100%; margin-bottom: 12px; }
+  .custom-agent select { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 8px; border-radius: 6px; }
+  .custom-agent .agent-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; color: var(--text); }
+  .conf-display { font-size: 13px; color: var(--accent); font-weight: 600; }
+
+  /* JSON Viewer */
+  .json-viewer { background: var(--surface2); border-radius: 8px; padding: 16px; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 12px; line-height: 1.6; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; color: var(--text-dim); }
+
+  /* Spinner */
+  .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--text-dim); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; margin-right: 8px; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Fade in animation */
+  .fade-in { animation: fadeIn 0.5s ease forwards; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Multi-Agent Orchestration</h1>
+  <span class="badge">DEMO</span>
+</div>
+
+<div class="container">
+
+  <!-- Controls -->
+  <div class="controls">
+    <input type="text" id="ticker" value="TSLA" placeholder="Ticker...">
+    <button class="btn btn-primary" id="runBtn" onclick="runPipeline()">Run Pipeline</button>
+    <button class="btn btn-outline" id="customToggle" onclick="toggleCustom()">Custom Signals</button>
+    <button class="btn btn-outline" onclick="showContracts()">View Contracts</button>
+  </div>
+
+  <!-- Custom Signals -->
+  <div class="custom-panel" id="customPanel">
+    <h3>Custom Agent Signals</h3>
+    <div class="custom-grid">
+      <div class="custom-agent">
+        <div class="agent-title">Technical</div>
+        <label>Signal</label>
+        <select id="c-tech-signal"><option value="bullish">Bullish</option><option value="bearish">Bearish</option><option value="neutral">Neutral</option></select>
+        <label>Confidence: <span class="conf-display" id="c-tech-conf-val">0.75</span></label>
+        <input type="range" id="c-tech-conf" min="0" max="100" value="75" oninput="document.getElementById('c-tech-conf-val').textContent=(this.value/100).toFixed(2)">
+      </div>
+      <div class="custom-agent">
+        <div class="agent-title">Sentiment</div>
+        <label>Signal</label>
+        <select id="c-sent-signal"><option value="bullish">Bullish</option><option value="bearish">Bearish</option><option value="neutral">Neutral</option></select>
+        <label>Confidence: <span class="conf-display" id="c-sent-conf-val">0.75</span></label>
+        <input type="range" id="c-sent-conf" min="0" max="100" value="75" oninput="document.getElementById('c-sent-conf-val').textContent=(this.value/100).toFixed(2)">
+      </div>
+      <div class="custom-agent">
+        <div class="agent-title">Risk</div>
+        <label>Signal</label>
+        <select id="c-risk-signal"><option value="bullish">Bullish</option><option value="bearish">Bearish</option><option value="neutral">Neutral</option></select>
+        <label>Confidence: <span class="conf-display" id="c-risk-conf-val">0.75</span></label>
+        <input type="range" id="c-risk-conf" min="0" max="100" value="75" oninput="document.getElementById('c-risk-conf-val').textContent=(this.value/100).toFixed(2)">
+      </div>
+    </div>
+    <button class="btn btn-primary" onclick="runCustomPipeline()">Run Custom Pipeline</button>
+  </div>
+
+  <!-- Pipeline Visualization -->
+  <div class="pipeline" id="pipeline">
+    <div class="agent-card" id="card-technical">
+      <div class="agent-name">Technical</div>
+      <div class="agent-signal signal-pending" id="sig-technical">--</div>
+      <div class="agent-conf" id="conf-technical">Waiting...</div>
+      <div class="agent-phase">Perception</div>
+    </div>
+    <div class="arrow" id="arrow-1">&rarr;</div>
+    <div class="agent-card" id="card-sentiment">
+      <div class="agent-name">Sentiment</div>
+      <div class="agent-signal signal-pending" id="sig-sentiment">--</div>
+      <div class="agent-conf" id="conf-sentiment">Waiting...</div>
+      <div class="agent-phase">Context</div>
+    </div>
+    <div class="arrow" id="arrow-2">&rarr;</div>
+    <div class="agent-card" id="card-risk">
+      <div class="agent-name">Risk</div>
+      <div class="agent-signal signal-pending" id="sig-risk">--</div>
+      <div class="agent-conf" id="conf-risk">Waiting...</div>
+      <div class="agent-phase">Decision</div>
+    </div>
+    <div class="arrow" id="arrow-3">&rarr;</div>
+    <div class="agent-card" id="card-result" style="width:220px;">
+      <div class="agent-name">Final Signal</div>
+      <div class="agent-signal signal-pending" id="sig-result">--</div>
+      <div class="agent-conf" id="conf-result">Waiting...</div>
+      <div class="agent-phase">Aggregation</div>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div class="result-panel" id="results" style="display:none;">
+    <div class="panel">
+      <h3>Recommendation</h3>
+      <div class="recommendation">
+        <div class="rec-signal" id="rec-signal">--</div>
+        <div class="rec-score" id="rec-score"></div>
+        <div class="rec-text" id="rec-text"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Handoff Log</h3>
+      <ul class="handoff-log" id="handoff-log"></ul>
+    </div>
+  </div>
+
+  <!-- JSON Viewer -->
+  <div class="panel" id="json-panel" style="display:none; margin-bottom: 32px;">
+    <h3>Full Pipeline State (JSON)</h3>
+    <div class="json-viewer" id="json-viewer"></div>
+  </div>
+
+</div>
+
+<script>
+const API = '';
+let customMode = false;
+
+function toggleCustom() {
+  customMode = !customMode;
+  document.getElementById('customPanel').classList.toggle('visible', customMode);
+  document.getElementById('customToggle').textContent = customMode ? 'Hide Custom' : 'Custom Signals';
+}
+
+async function runPipeline() {
+  const ticker = document.getElementById('ticker').value || 'TSLA';
+  const btn = document.getElementById('runBtn');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Running...';
+  resetCards();
+  try {
+    const res = await fetch(API + '/api/run-pipeline', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ticker})
+    });
+    const data = await res.json();
+    animateResults(data);
+  } catch(e) { alert('Error: ' + e.message); }
+  btn.disabled = false; btn.textContent = 'Run Pipeline';
+}
+
+async function runCustomPipeline() {
+  const ticker = document.getElementById('ticker').value || 'TSLA';
+  const body = {
+    ticker,
+    technical: { signal: document.getElementById('c-tech-signal').value, confidence: parseInt(document.getElementById('c-tech-conf').value)/100, summary: 'Custom technical signal' },
+    sentiment: { signal: document.getElementById('c-sent-signal').value, confidence: parseInt(document.getElementById('c-sent-conf').value)/100, summary: 'Custom sentiment signal' },
+    risk: { signal: document.getElementById('c-risk-signal').value, confidence: parseInt(document.getElementById('c-risk-conf').value)/100, summary: 'Custom risk signal' }
+  };
+  resetCards();
+  try {
+    const res = await fetch(API + '/api/run-custom', {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    animateResults(data);
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function showContracts() {
+  try {
+    const res = await fetch(API + '/api/contracts');
+    const data = await res.json();
+    document.getElementById('json-panel').style.display = 'block';
+    document.getElementById('json-viewer').textContent = JSON.stringify(data, null, 2);
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+function resetCards() {
+  ['technical','sentiment','risk','result'].forEach(id => {
+    const card = document.getElementById('card-'+id);
+    card.classList.remove('active','done');
+    document.getElementById('sig-'+id).textContent = '--';
+    document.getElementById('sig-'+id).className = 'agent-signal signal-pending';
+    document.getElementById('conf-'+id).textContent = 'Waiting...';
+  });
+  ['arrow-1','arrow-2','arrow-3'].forEach(id => document.getElementById(id).classList.remove('active'));
+  document.getElementById('results').style.display = 'none';
+  document.getElementById('json-panel').style.display = 'none';
+}
+
+function animateResults(data) {
+  const agents = ['technical','sentiment','risk'];
+  const arrows = ['arrow-1','arrow-2','arrow-3'];
+  let delay = 0;
+
+  agents.forEach((a, i) => {
+    delay += 400;
+    setTimeout(() => {
+      const card = document.getElementById('card-'+a);
+      const result = data[a] || {};
+      card.classList.add('active');
+      setTimeout(() => { card.classList.remove('active'); card.classList.add('done'); }, 350);
+      const sig = result.signal || '--';
+      document.getElementById('sig-'+a).textContent = sig.toUpperCase();
+      document.getElementById('sig-'+a).className = 'agent-signal signal-' + (sig === 'bullish' ? 'bullish' : sig === 'bearish' ? 'bearish' : 'neutral');
+      const conf = result.confidence != null ? (result.confidence * 100).toFixed(0) + '%' : '--';
+      document.getElementById('conf-'+a).textContent = 'Confidence: ' + conf;
+      if (arrows[i]) document.getElementById(arrows[i]).classList.add('active');
+    }, delay);
+  });
+
+  delay += 500;
+  setTimeout(() => {
+    const rec = data.final_recommendation || {};
+    const card = document.getElementById('card-result');
+    card.classList.add('active');
+    setTimeout(() => { card.classList.remove('active'); card.classList.add('done'); }, 350);
+    const sig = rec.signal || '--';
+    document.getElementById('sig-result').textContent = sig.toUpperCase();
+    document.getElementById('sig-result').className = 'agent-signal signal-' + (sig === 'bullish' ? 'bullish' : sig === 'bearish' ? 'bearish' : 'neutral');
+    document.getElementById('conf-result').textContent = 'Score: ' + ((rec.composite_score || 0) >= 0 ? '+' : '') + (rec.composite_score || 0).toFixed(2);
+
+    // Recommendation panel
+    document.getElementById('results').style.display = 'grid';
+    document.getElementById('results').classList.add('fade-in');
+    document.getElementById('rec-signal').textContent = sig.toUpperCase();
+    document.getElementById('rec-signal').className = 'rec-signal signal-' + (sig === 'bullish' ? 'bullish' : sig === 'bearish' ? 'bearish' : 'neutral');
+    document.getElementById('rec-score').textContent = 'Composite: ' + ((rec.composite_score||0)>=0?'+':'') + (rec.composite_score||0).toFixed(2) + ' | Confidence: ' + ((rec.overall_confidence||0)*100).toFixed(0) + '%';
+    document.getElementById('rec-text').textContent = rec.recommendation || '';
+
+    // Handoff log
+    const logEl = document.getElementById('handoff-log');
+    logEl.innerHTML = '';
+    (data.handoff_log || []).forEach(h => {
+      const li = document.createElement('li');
+      li.className = 'handoff-entry fade-in';
+      const ctx = h.context_snapshot?.completed_agents || {};
+      const ctxStr = Object.entries(ctx).map(([k,v]) => k + ': ' + v.signal + ' (' + (v.confidence*100).toFixed(0) + '%)').join(', ');
+      li.innerHTML = '<div class="handoff-route">' + h.from_agent + ' &rarr; ' + h.to_agent + ' <span style="color:var(--accent)">(' + h.phase + ')</span></div>' +
+        '<div class="handoff-meta">' + h.timestamp + '</div>' +
+        (ctxStr ? '<div class="handoff-ctx">Context: ' + ctxStr + '</div>' : '');
+      logEl.appendChild(li);
+    });
+
+    // JSON
+    document.getElementById('json-panel').style.display = 'block';
+    document.getElementById('json-viewer').textContent = JSON.stringify(data, null, 2);
+  }, delay);
+}
+</script>
+</body>
+</html>
