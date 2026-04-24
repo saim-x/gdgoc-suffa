@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
+from sma_graph import run_sma_workflow
 from trading_graph import run_trading_workflow
 
 
@@ -16,11 +17,19 @@ class AnalysisRequest(BaseModel):
     )
 
 
+class SmaAnalysisRequest(BaseModel):
+    symbol: str = Field(..., examples=["AAPL"])
+
+
 @app.get("/")
 async def root():
     return {
         "message": "GDGOC Suffa backend is running.",
         "system": "Multi-agent trading analysis starter built with FastAPI and LangGraph.",
+        "available_workflows": [
+            "POST /analysis/basic",
+            "POST /analysis/sma",
+        ],
     }
 
 
@@ -37,3 +46,8 @@ async def basic_analysis(payload: AnalysisRequest):
         market_context=payload.market_context,
     )
     return result
+
+
+@app.post("/analysis/sma")
+async def sma_analysis(payload: SmaAnalysisRequest):
+    return run_sma_workflow(symbol=payload.symbol)
