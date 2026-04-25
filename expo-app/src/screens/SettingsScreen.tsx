@@ -29,6 +29,8 @@ export function SettingsScreen() {
     setDefaultConfidenceThreshold,
     resetAllTradingData,
     resettingData,
+    demoMode,
+    setDemoMode,
   } = useTrading();
 
   const [capitalInput, setCapitalInput] = useState(String(Math.round(capitalLimit)));
@@ -159,6 +161,14 @@ export function SettingsScreen() {
         <SettingSwitch label="Autonomous mode" value={autonomousMode} onValueChange={onAutonomousToggle} />
         <SettingSwitch label="Notifications" value={notificationsEnabled} onValueChange={setNotificationsEnabled} />
         <SettingSwitch label="Biometric lock" value={biometricLock} onValueChange={setBiometricLock} />
+      </GlassCard>
+
+      <GlassCard innerStyle={styles.card}>
+        <Text style={styles.sectionTitle}>Demo & Recording</Text>
+        <Text style={styles.hint}>
+          When enabled, Home metrics are displayed in a recording-friendly way
+        </Text>
+        <SettingSwitch label="Demo mode" value={demoMode} onValueChange={setDemoMode} />
       </GlassCard>
 
       <GlassCard innerStyle={styles.card}>

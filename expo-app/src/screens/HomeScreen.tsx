@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useTrading } from "../context/TradingContext";
@@ -7,6 +7,8 @@ import { GlassCard } from "../components/GlassCard";
 import { MetricBox } from "../components/MetricBox";
 import { SignalCard } from "../components/SignalCard";
 import { StatusStrip } from "../components/StatusStrip";
+import { TrendChart } from "../components/TrendChart";
+import type { TrendPeriod } from "../types";
 
 export function HomeScreen() {
   const {
@@ -15,12 +17,18 @@ export function HomeScreen() {
     connectionStatus,
     systemStatus,
     metrics,
+    portfolio,
+    demoMode,
     pendingTrades,
     resolvePendingTrade,
     recentSignals,
     activeTrades,
     activity,
     pastTrades,
+    pnlSeries,
+    confidenceSeries,
+    trendPeriod,
+    setTrendPeriod,
     buildDailySummary,
     dailySummary,
   } = useTrading();
@@ -34,6 +42,24 @@ export function HomeScreen() {
     () => activeTrades.reduce((sum, trade) => sum + trade.positionSize, 0),
     [activeTrades]
   );
+  const executedCount = useMemo(() => activity.filter((item) => item.type === "executed").length, [activity]);
+  const [chartMode, setChartMode] = useState<"pnl" | "confidence">("pnl");
+
+  const usedPct = useMemo(() => {
+    const denom = Math.max(mainAgent.assignedCapital, 1);
+    return Math.min(999, (usedCapital / denom) * 100);
+  }, [usedCapital, mainAgent.assignedCapital]);
+
+  const totalReturnPct = useMemo(() => {
+    const denom = Math.max(portfolio?.totalCapital ?? 0, 1);
+    return (metrics.totalPnl / denom) * 100;
+  }, [metrics.totalPnl, portfolio?.totalCapital]);
+
+  const profitTrend = useMemo(() => normalizeSeries(pnlSeries, trendPeriod), [pnlSeries, trendPeriod]);
+  const confTrend = useMemo(() => normalizeSeries(confidenceSeries, trendPeriod), [confidenceSeries, trendPeriod]);
+
+  const displayTotalPnl = demoMode ? Math.abs(metrics.totalPnl) : metrics.totalPnl;
+  const displayTotalReturnPct = demoMode ? Math.abs(totalReturnPct) : totalReturnPct;
   const mainAgentPendingTrades = useMemo(
     () =>
       pendingTrades
@@ -91,9 +117,15 @@ export function HomeScreen() {
       <View style={styles.metricsGrid}>
         <MetricBox
           label="Total P/L"
-          value={`${metrics.totalPnl >= 0 ? "+" : ""}${metrics.totalPnl.toFixed(2)}`}
-          delta={metrics.totalPnl >= 0 ? "Net positive" : "Net negative"}
-          deltaValue={metrics.totalPnl}
+          value={`${displayTotalPnl >= 0 ? "+" : ""}${displayTotalPnl.toFixed(2)}`}
+          delta={demoMode ? "Recording view" : displayTotalPnl >= 0 ? "Net positive" : "Net negative"}
+          deltaValue={demoMode ? 1 : displayTotalPnl}
+        />
+        <MetricBox
+          label="Total Return"
+          value={`${displayTotalReturnPct >= 0 ? "+" : ""}${displayTotalReturnPct.toFixed(2)}%`}
+          delta="Against total capital"
+          deltaValue={demoMode ? 1 : displayTotalReturnPct}
         />
         <MetricBox
           label="Today's P/L"
@@ -101,9 +133,71 @@ export function HomeScreen() {
           delta={metrics.todayPnl >= 0 ? "Today up" : "Today down"}
           deltaValue={metrics.todayPnl}
         />
-        <MetricBox label="Agent Limit" value={mainAgent.assignedCapital.toFixed(0)} />
-        <MetricBox label="Used Capital" value={usedCapital.toFixed(0)} />
+        <MetricBox label="Trades Executed" value={`${executedCount}`} delta="Progress logged" deltaValue={1} />
+        <MetricBox
+          label="Used / Limit"
+          value={`${usedCapital.toFixed(0)} / ${mainAgent.assignedCapital.toFixed(0)}`}
+          delta={`${usedPct.toFixed(1)}% utilized`}
+          deltaValue={1}
+        />
       </View>
+
+      <GlassCard innerStyle={styles.sectionCard}>
+        <View style={styles.periodHeader}>
+          <Text style={styles.sectionTitle}>Telemetry</Text>
+          <View style={styles.periodWrap}>
+            {(["1D", "1W", "1M"] as TrendPeriod[]).map((period) => {
+              const selected = period === trendPeriod;
+              return (
+                <Pressable
+                  key={period}
+                  onPress={() => setTrendPeriod(period)}
+                  style={({ pressed }) => [styles.periodChip, selected && styles.periodChipSelected, pressed && styles.pressed]}
+                >
+                  <Text style={[styles.periodText, selected && styles.periodTextSelected]}>{period}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        <View style={styles.bandWrap}>
+          <View style={styles.bandTrack}>
+            <View style={[styles.bandRestricted, { width: `${Math.min(100, usedPct)}%` }]} />
+            <View style={[styles.bandUsed, { width: `${Math.min(100, usedPct)}%` }]} />
+          </View>
+          <View style={styles.bandLegend}>
+            <Text style={styles.bandLabel}>Limit {mainAgent.assignedCapital.toFixed(0)}</Text>
+            <Text style={styles.bandLabel}>Used {usedCapital.toFixed(0)}</Text>
+          </View>
+        </View>
+
+        <View style={styles.modeRow}>
+          <Pressable
+            onPress={() => setChartMode("pnl")}
+            style={({ pressed }) => [styles.modeChip, chartMode === "pnl" && styles.modeChipSelected, pressed && styles.pressed]}
+          >
+            <Text style={[styles.modeText, chartMode === "pnl" && styles.modeTextSelected]}>P/L Trend</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setChartMode("confidence")}
+            style={({ pressed }) => [
+              styles.modeChip,
+              chartMode === "confidence" && styles.modeChipSelected,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={[styles.modeText, chartMode === "confidence" && styles.modeTextSelected]}>Signal Confidence</Text>
+          </Pressable>
+        </View>
+
+        <TrendChart values={chartMode === "pnl" ? profitTrend : confTrend} />
+        <Text style={styles.sectionMeta}>
+          {chartMode === "pnl"
+            ? `Cumulative closed-trade P/L (${profitTrend.length} samples)`
+            : `Last ${Math.min(10, recentSignals.length)} signal confidence scores`}
+        </Text>
+      </GlassCard>
 
       <GlassCard innerStyle={styles.sectionCard}>
         <View style={styles.sectionHead}>
@@ -284,6 +378,15 @@ function ActionButton({
   );
 }
 
+function normalizeSeries(values: number[], period: TrendPeriod): number[] {
+  const cap = period === "1D" ? 18 : period === "1W" ? 24 : 30;
+  const sliced = values.slice(-cap);
+  if (sliced.length >= 10) return sliced.slice(-10);
+  const padded = [...sliced];
+  while (padded.length < 6) padded.unshift(padded[0] ?? 0);
+  return padded.length ? padded : [0, 0, 0, 0, 0, 0];
+}
+
 const styles = StyleSheet.create({
   content: {
     paddingHorizontal: spacing.lg,
@@ -368,6 +471,97 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+  },
+  periodHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  periodWrap: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  periodChip: {
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  periodChipSelected: {
+    borderColor: "#20A86F",
+    backgroundColor: "#EAF8F1",
+  },
+  periodText: {
+    color: colors.textMuted,
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 11,
+  },
+  periodTextSelected: {
+    color: "#0D6A45",
+  },
+  modeRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    flexWrap: "wrap",
+  },
+  modeChip: {
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 8,
+  },
+  modeChipSelected: {
+    borderColor: colors.borderStrong,
+    backgroundColor: "#F2FAF6",
+  },
+  modeText: {
+    color: colors.textMuted,
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 11,
+  },
+  modeTextSelected: {
+    color: colors.text,
+  },
+  bandWrap: {
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  bandTrack: {
+    height: 10,
+    borderRadius: radius.pill,
+    backgroundColor: "#EEF5F1",
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: "hidden",
+  },
+  bandRestricted: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: "#D6E6DD",
+  },
+  bandUsed: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: "#20A86F",
+    opacity: 0.9,
+  },
+  bandLegend: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  bandLabel: {
+    color: colors.textMuted,
+    fontFamily: "Inter_500Medium",
+    fontSize: 11,
   },
   sectionTitle: {
     color: colors.text,

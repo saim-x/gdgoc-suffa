@@ -27,6 +27,8 @@ type TradingContextValue = {
   pingBackend: () => Promise<void>;
   resettingData: boolean;
   resetAllTradingData: () => Promise<boolean>;
+  demoMode: boolean;
+  setDemoMode: (enabled: boolean) => void;
   systemStatus: SystemStatus;
   analyzing: boolean;
   autonomousMode: boolean;
@@ -58,6 +60,15 @@ type TradingContextValue = {
   resolvePendingTrade: (tradeId: string, accepted: boolean) => void;
   analyzeSignal: (draft: SignalDraft) => Promise<void>;
   metrics: TradingMetrics;
+  portfolio: {
+    totalCapital: number;
+    availableCapital: number;
+    totalAllocated: number;
+    totalUsed: number;
+    unrealizedPnl: number;
+  } | null;
+  pnlSeries: number[];
+  confidenceSeries: number[];
   trendPeriod: TrendPeriod;
   setTrendPeriod: (period: TrendPeriod) => void;
 };
@@ -131,13 +142,18 @@ function dedupeActivityItems(items: ActivityItem[]): ActivityItem[] {
     if (seenById.has(item.id)) continue;
     seenById.add(item.id);
 
-    const normalizedNote = item.note.trim().toLowerCase().replace(/\s+/g, " ");
-    const fingerprint = `${item.type}|${item.asset}|${item.action}|${item.confidence}|${normalizedNote}`;
+    const normalizedNote = item.note
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      // Strip volatile numbers (prices, sizes, fees) so the same event doesn't appear as triplets.
+      .replace(/[$€£]?\d+(?:\.\d+)?/g, "<n>");
+    const fingerprint = `${item.type}|${item.asset}|${item.action}|${normalizedNote}`;
     const ts = toTimestampMs(item.timestamp);
     const previousTs = seenFingerprintAt.get(fingerprint);
 
     // Collapse near-identical bursts that appear as duplicates/triplets in feed.
-    if (previousTs !== undefined && Math.abs(previousTs - ts) <= 120000) continue;
+    if (previousTs !== undefined && Math.abs(previousTs - ts) <= 10 * 60 * 1000) continue;
 
     seenFingerprintAt.set(fingerprint, ts);
     deduped.push(item);
@@ -160,6 +176,7 @@ export function TradingProvider({ children }: { children: React.ReactNode }) {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [capitalLimit, setCapitalLimit] = useState(500000);
   const [defaultConfidenceThreshold, setDefaultConfidenceThreshold] = useState(85);
+  const [demoMode, setDemoMode] = useState(false);
   const [agents, setAgents] = useState<AgentConfig[]>([initialMainAgent]);
 
   const [recentSignals, setRecentSignals] = useState<SignalInsight[]>([]);
@@ -171,6 +188,8 @@ export function TradingProvider({ children }: { children: React.ReactNode }) {
   const [pendingTrades, setPendingTrades] = useState<PendingDecision[]>([]);
   const [trendPeriod, setTrendPeriod] = useState<TrendPeriod>("1D");
   const [portfolioState, setPortfolioState] = useState<any>(null);
+  const [pnlSeries, setPnlSeries] = useState<number[]>([0, 0, 0, 0, 0, 0]);
+  const [confidenceSeries, setConfidenceSeries] = useState<number[]>([0, 0, 0, 0, 0, 0]);
 
   const mainAgent = useMemo(
     () => agents.find((agent) => agent.id === "agent-orion") ?? agents[0] ?? initialMainAgent,
@@ -229,6 +248,11 @@ export function TradingProvider({ children }: { children: React.ReactNode }) {
           source: "x" as const,
         }));
         setRecentSignals(mapped);
+        const conf = mapped
+          .slice(0, 12)
+          .map((s) => s.confidence)
+          .reverse();
+        setConfidenceSeries(conf.length ? conf : [0, 0, 0, 0, 0, 0]);
       }
 
       // Process agents
@@ -252,6 +276,11 @@ export function TradingProvider({ children }: { children: React.ReactNode }) {
         setPortfolioState(data);
         setAutonomousModeLocal(data.autonomous_mode ?? false);
         setRiskLevelLocal(data.risk_level ?? "medium");
+        setPnlSeries((prev) => {
+          const next = [...prev, Number(data.total_pnl ?? 0)];
+          const cap = trendPeriod === "1D" ? 36 : trendPeriod === "1W" ? 48 : 60;
+          return next.slice(-cap);
+        });
 
         // Map active positions to ActiveTrade[]
         const mapped: ActiveTrade[] = (data.active_positions || []).map((p: any) => ({
@@ -344,7 +373,16 @@ export function TradingProvider({ children }: { children: React.ReactNode }) {
         const text = await response.text();
         throw new Error(text || `Reset failed (${response.status})`);
       }
+      // Clear local UI caches immediately so Home charts/tiles reset without waiting for the next poll.
+      setPortfolioState(null);
+      setRecentSignals([]);
+      setActiveTrades([]);
+      setActivity([]);
+      setSummaryRecords([]);
+      setPendingTrades([]);
       setDailySummary(null);
+      setPnlSeries([0, 0, 0, 0, 0, 0]);
+      setConfidenceSeries([0, 0, 0, 0, 0, 0]);
       await pollData();
       return true;
     } catch (err) {
@@ -548,6 +586,17 @@ export function TradingProvider({ children }: { children: React.ReactNode }) {
     return { totalPnl: 0, todayPnl: 0, activeCapital: 0, restrictedCapital: mainAgent.assignedCapital };
   }, [portfolioState, mainAgent.assignedCapital]);
 
+  const portfolio = useMemo(() => {
+    if (!portfolioState) return null;
+    return {
+      totalCapital: portfolioState.total_capital ?? 0,
+      availableCapital: portfolioState.available_capital ?? 0,
+      totalAllocated: portfolioState.total_allocated ?? 0,
+      totalUsed: portfolioState.total_used ?? 0,
+      unrealizedPnl: portfolioState.unrealized_pnl ?? 0,
+    };
+  }, [portfolioState]);
+
   const pastTrades = useMemo(
     () => summaryRecords.filter((record) => record.action === "execute"),
     [summaryRecords],
@@ -561,6 +610,8 @@ export function TradingProvider({ children }: { children: React.ReactNode }) {
     pingBackend,
     resetAllTradingData,
     resettingData,
+    demoMode,
+    setDemoMode,
     systemStatus,
     analyzing,
     autonomousMode,
@@ -592,6 +643,9 @@ export function TradingProvider({ children }: { children: React.ReactNode }) {
     resolvePendingTrade,
     analyzeSignal,
     metrics,
+    portfolio,
+    pnlSeries,
+    confidenceSeries,
     trendPeriod,
     setTrendPeriod,
   };

@@ -72,13 +72,19 @@ async def get_portfolio_state() -> dict:
     unrealized_pnl = 0.0
     for trade in open_trades:
         current = get_current_price(trade["asset"])
-        if current > 0:
-            if trade["direction"] == "buy":
-                live_pnl = round((current - trade["entry_price"]) / trade["entry_price"] * trade["position_size"] - trade["fee"], 2)
-            else:
-                live_pnl = round((trade["entry_price"] - current) / trade["entry_price"] * trade["position_size"] - trade["fee"], 2)
-        else:
-            live_pnl = 0.0
+        live_pnl = 0.0
+        if current > 0 and trade.get("entry_price", 0) > 0 and trade.get("position_size", 0) > 0:
+            direction = trade.get("direction")
+            if direction == "buy":
+                live_pnl = round(
+                    (current - trade["entry_price"]) / trade["entry_price"] * trade["position_size"] - trade["fee"],
+                    2,
+                )
+            elif direction == "sell":
+                live_pnl = round(
+                    (trade["entry_price"] - current) / trade["entry_price"] * trade["position_size"] - trade["fee"],
+                    2,
+                )
 
         unrealized_pnl += live_pnl
         active_positions.append({
